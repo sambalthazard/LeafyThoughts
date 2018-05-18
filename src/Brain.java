@@ -131,7 +131,7 @@ public abstract class Brain {
 			if (i + 1 < thetas.length) {
 				
 				// Workaround of SimpleMatrix limitation of no left-growing:
-				//  (0 , 0)		(1 , 0)		(1  , a00, .. , a0j)
+				//	(0 , 0)		(1 , 0)		(1  , a00, .. , a0j)
 				//	(0 , 0)	->	(1 , 0)	->	(1  , a10, .. , a1j)
 				//	(. , .)		(. , .)		(.  , .  , .. , .  )
 				//	(0 , 0)		(1 , 0)		(1  , ai0, .. , aij)
