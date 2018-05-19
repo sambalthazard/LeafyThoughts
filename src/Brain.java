@@ -28,7 +28,7 @@ public abstract class Brain {
 	
 	/**
 	 * Initializes the brain.
-	 * @param layerSizes The number of nodes in each layer of the network. Index 0 is the input layer, and the last number is the output layer.
+	 * @param layerSizes The number of nodes in each layer of the network. Index 0 is the input layer, and the last index is the output layer.
 	 * @throws BrainException
 	 */
 	public Brain(int[] layerSizes) throws BrainException {
@@ -98,29 +98,59 @@ public abstract class Brain {
 	 * @param maxIterations
 	 * @return
 	 */
-	private static double[][][] fmincg(double[][][] thetas , int maxIterations) {
-		
-		
-		
-	}
-	
-	/**
-	 * Calculates the NN error, i.e. the cost J. Calculates theta gradients to modify weights in the right direction.
-	 * @return the cost J; sets the static class variable 'gradients' to the gradients calculated
-	 */
-	private static double costFunction(double[][][] thetaMatrices , int[] layerSizes , SimpleMatrix x , SimpleMatrix y , double lambda) {
-		
-		int m = x.numRows();
-		double J = 0;
-		int numLabels = layerSizes[layerSizes.length - 1];
+	private static double[][][] fmincg(double[][][] thetaMatrices , int maxIterations) {
 		
 		// Convert thetas into SimpleMatrix objects for efficient matrix computation
 		SimpleMatrix[] thetas = new SimpleMatrix[thetaMatrices.length];
 		for (int i = 0 ; i < thetaMatrices.length ; i++)
 			thetas[i] = new SimpleMatrix(thetaMatrices[i]);
 		
+	}
+	
+	/**
+	 * Calculates the NN error, i.e. the cost J. Calculates theta gradients to modify weights in the right direction.
+	 * @param thetas The weights for each forward feed through NN layers.
+	 * @param x
+	 * @param y The correct answers for each case (0 in index of incorrect answer, 1 in index of correct answer).
+	 * @param layerSizes The number of nodes in each layer of the network. Index 0 is the input layer, and the last index is the output layer.
+	 * @param lambda The regularization parameter.
+	 * @return The cost J; sets the static class variable 'gradients' to the gradients calculated.
+	 */
+	private static double nnCostFunction(SimpleMatrix[] thetas , SimpleMatrix x , SimpleMatrix y , int[] layerSizes , double lambda) {
+		
+		int m = x.numRows();
+		int numLabels = layerSizes[layerSizes.length - 1];
+		
+		// Copy x into a for modification in feedforward
 		SimpleMatrix a = new SimpleMatrix(x);
+		
 		// Feedforward through the layers:
+		a = feedForward(thetas , a);
+		
+		// Calculate non-regularized cost j
+		double j = costFunction(a , y , m);
+		
+		// Regularize cost j
+		j = regularizeCost(j , thetas , m , lambda);
+		
+		// Backpropagate to get non-regularized gradients
+		gradients = backpropagate(a , x , y , thetas , m);
+		
+		// Regularize gradients
+		regularizeGradients(thetas , lambda , m);
+		
+		return j;
+		
+	}
+	
+	/**
+	 * Feeds forward an input through NN layers to produce NN's answers.
+	 * @param thetas The weights for each forward feed through NN layers.
+	 * @param a The matrix to feed forward through the NN.
+	 * @return The calculated answers for each case (% probability in each index).
+	 */
+	public static SimpleMatrix feedForward(SimpleMatrix[] thetas , SimpleMatrix a) {
+		
 		for (int i = 0 ; i < thetas.length ; i++) {
 			
 			// Feedforward one layer
@@ -142,24 +172,56 @@ public abstract class Brain {
 			
 		}
 		
-		// Compute J = (1/m) * sum(1->m)sum(1->k) [ -yki log((hθ(xi))k) - (1 - yki) log(1 - (hθ(xi))k)]
+		return a;
+		
+	}
+	
+	/**
+	 * Calculates the cost J of a's distance from y, i.e. how far off the feedforward algorithm is from 100% accurate.
+	 * @param a The calculated answers for each case (% probability in each index).
+	 * @param y The correct answers for each case (0 in index of incorrect answer, 1 in index of correct answer).
+	 * @param m The number of cases.
+	 * @return The cost J of a's distance from y.
+	 */
+	public static double costFunction(SimpleMatrix a , SimpleMatrix y , int m ) {
+		
+		int numLabels = y.numCols();
+		
+		// Compute cost: J = (1/m) * sum(1->m)sum(1->k) [ -yki log((hθ(xi))k) - (1 - yki) log(1 - (hθ(xi))k)]
+		int j = 0;
 		for (int i = 0 ; i < numLabels ; i++) {
-			
+		
 			SimpleMatrix minusYiVertical = y.extractVector(false , i).scale(-1);
 			SimpleMatrix hOfXiHorizontal = a.extractVector(false , i).transpose();
 			
-			J += (hOfXiHorizontal.elementLog().mult(minusYiVertical)
+			j += (hOfXiHorizontal.elementLog().mult(minusYiVertical)
 					.minus(hOfXiHorizontal.scale(-1).plus(1).elementLog().mult(minusYiVertical.plus(1))))
 				.elementSum();
 			
 		}
-		J *= (1.0 / m);
+		j *= (1.0 / m);
 		
-		// Regularize J:
+		return j;
+		
+	}
+	
+	/**
+	 * Computes cost J with regularization of degree 2 from non-regularized J.
+	 * @param jNonReg Initial, non-regularized J.
+	 * @param thetas The weights for each forward feed through NN layers.
+	 * @param m The number of cases.
+	 * @param lambda The regularization parameter.
+	 * @return The regularized cost J.
+	 */
+	public static double regularizeCost(double jNonReg , SimpleMatrix[] thetas , int m , double lambda) {
+		
+		// Regularize: J = jNonReg + (lambda / 2m) * [each element of thetas ^2]
 		double thetasSquaredSum = 0;
 		for (SimpleMatrix mx : thetas)
 			thetasSquaredSum += mx.elementPower(2).elementSum();
-		J = J + (lambda / (2.0 * m)) * thetasSquaredSum;
+		double jReg = jNonReg + (lambda / (2.0 * m)) * thetasSquaredSum;
+		
+		return jReg;
 		
 	}
 	
