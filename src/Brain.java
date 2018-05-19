@@ -4,7 +4,6 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Random;
-import java.util.function.Function;
 
 import org.ejml.simple.SimpleMatrix;
 
@@ -106,12 +105,12 @@ public abstract class Brain {
 	}
 	
 	/**
-	 * 
+	 * Calculates the NN error, i.e. the cost J. Calculates theta gradients to modify weights in the right direction.
 	 * @return the cost J; sets the static class variable 'gradients' to the gradients calculated
 	 */
-	private static double costFunction(double[][][] thetaMatrices , int[] layerSizes , double[][] casesX , double[][] casesY , double lambda) {
+	private static double costFunction(double[][][] thetaMatrices , int[] layerSizes , SimpleMatrix x , SimpleMatrix y , double lambda) {
 		
-		int m = casesX.length;
+		int m = x.numRows();
 		double J = 0;
 		int numLabels = layerSizes[layerSizes.length - 1];
 		
@@ -120,7 +119,7 @@ public abstract class Brain {
 		for (int i = 0 ; i < thetaMatrices.length ; i++)
 			thetas[i] = new SimpleMatrix(thetaMatrices[i]);
 		
-		SimpleMatrix a = new SimpleMatrix(casesX);
+		SimpleMatrix a = new SimpleMatrix(x);
 		// Feedforward through the layers:
 		for (int i = 0 ; i < thetas.length ; i++) {
 			
@@ -143,12 +142,18 @@ public abstract class Brain {
 			
 		}
 		
-		// Compute J:
+		// Compute J = (1/m) * sum(1->m)sum(1->k) [ -yki log((hθ(xi))k) - (1 - yki) log(1 - (hθ(xi))k)]
 		for (int i = 0 ; i < numLabels ; i++) {
 			
-			J = J + (1.0 / m) * 
+			SimpleMatrix minusYiVertical = y.extractVector(false , i).scale(-1);
+			SimpleMatrix hOfXiHorizontal = a.extractVector(false , i).transpose();
+			
+			J += (hOfXiHorizontal.elementLog().mult(minusYiVertical)
+					.minus(hOfXiHorizontal.scale(-1).plus(1).elementLog().mult(minusYiVertical.plus(1))))
+				.elementSum();
 			
 		}
+		J *= (1.0 / m);
 		
 		// Regularize J:
 		double thetasSquaredSum = 0;
@@ -160,8 +165,8 @@ public abstract class Brain {
 	
 	/**
 	 * Calculates the sigmoid equation for each element in a SimpleMatrix and returns the result.
-	 * @param mx
-	 * @return
+	 * @param mx The matrix to apply the sigmoid equation to each element.
+	 * @return The input matrix with sigmoid equation applied to each element
 	 */
 	public static SimpleMatrix sigmoid(SimpleMatrix mx) {
 		
@@ -178,51 +183,51 @@ public abstract class Brain {
 	protected String[] fileToLines(String fname) throws BrainException {
 		
 		String[] content = new String[100];
-        String line = null;
+		String line = null;
 
-        try {
-        	
-            FileReader fileReader = new FileReader(fname);
+		try {
+	        
+			FileReader fileReader = new FileReader(fname);
 
-            // Wrap the FileReader in a BufferedReader.
-            BufferedReader bufferedReader = new BufferedReader(fileReader);
+			// Wrap the FileReader in a BufferedReader.
+			BufferedReader bufferedReader = new BufferedReader(fileReader);
 
-            int index = 0;
-            while((line = bufferedReader.readLine()) != null) {
-            	
-            	// Dynamically increase array size if going to overflow
-                if (content.length <= index) {
-                	
-                	String[] temp = content;
-                	content = new String[content.length * 2];
-                	System.arraycopy(temp , 0 , content , 0 , temp.length);
-                	
-                }
-                
-                content[index] = line;
-                index++;
-                
-            }
+			int index = 0;
+			while((line = bufferedReader.readLine()) != null) {
+			
+				// Dynamically increase array size if going to overflow
+				if (content.length <= index) {
+					
+					String[] temp = content;
+					content = new String[content.length * 2];
+					System.arraycopy(temp , 0 , content , 0 , temp.length);
+					
+				}
+				
+				content[index] = line;
+				index++;
 
-            // Close the file
-            bufferedReader.close();
+			}
+
+			// Close the file
+			bufferedReader.close();
+			
+			// Reduce the array size to not have any empty trailing entries
+			
+			
+			return content;
             
-            // Reduce the array size to not have any empty trailing entries
-            
-            
-            return content;
-            
-        }
-        catch(FileNotFoundException ex) {
-        	
-            throw new BrainException("The brain can't work with an invalid data file path!");
-            
-        }
-        catch(IOException ex) {
-        	
-            throw new BrainException("The brain hiccupped reading the data path...");
-            
-        }
+		}
+		catch(FileNotFoundException ex) {
+			
+			throw new BrainException("The brain can't work with an invalid data file path!");
+			
+		}
+		catch(IOException ex) {
+			
+			throw new BrainException("The brain hiccupped reading the data path...");
+			
+		}
 		
 	}
 	
