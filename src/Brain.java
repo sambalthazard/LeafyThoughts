@@ -24,7 +24,8 @@ public abstract class Brain {
 	private Random rand; // Random number generator
 	private double lambda; // Weight regularization parameter
 	
-	private static double[][][] gradients; // Most recent gradients calculated by costFunction
+	private static SimpleMatrix[] gradients; // Most recent gradients calculated by costFunction
+	private static SimpleMatrix[] z; // Most recent z values calculated by feedForward; z[i] = a[i] before sigmoid
 	
 	/**
 	 * Initializes the brain.
@@ -116,19 +117,20 @@ public abstract class Brain {
 	 * @param lambda The regularization parameter.
 	 * @return The cost J; sets the static class variable 'gradients' to the gradients calculated.
 	 */
-	private static double nnCostFunction(SimpleMatrix[] thetas , SimpleMatrix x , SimpleMatrix y , int[] layerSizes , double lambda) {
+	private static double costFunction(SimpleMatrix[] thetas , SimpleMatrix x , SimpleMatrix y , int[] layerSizes , double lambda) {
 		
 		int m = x.numRows();
 		int numLabels = layerSizes[layerSizes.length - 1];
 		
 		// Copy x into a for modification in feedforward
-		SimpleMatrix a = new SimpleMatrix(x);
+		SimpleMatrix[] a = new SimpleMatrix[layerSizes.length];
+		a[0] = new SimpleMatrix(x);
 		
 		// Feedforward through the layers:
 		a = feedForward(thetas , a);
 		
 		// Calculate non-regularized cost j
-		double j = costFunction(a , y , m);
+		double j = calculateCost(a[a.length - 1] , y , m);
 		
 		// Regularize cost j
 		j = regularizeCost(j , thetas , m , lambda);
@@ -146,15 +148,16 @@ public abstract class Brain {
 	/**
 	 * Feeds forward an input through NN layers to produce NN's answers.
 	 * @param thetas The weights for each forward feed through NN layers.
-	 * @param a The matrix to feed forward through the NN.
-	 * @return The calculated answers for each case (% probability in each index).
+	 * @param a In index 0, the matrix to feed forward through the NN.
+	 * @return The calculated answers for each case (% probability in each index) in each layer. 
 	 */
-	public static SimpleMatrix feedForward(SimpleMatrix[] thetas , SimpleMatrix a) {
+	private static SimpleMatrix[] feedForward(SimpleMatrix[] thetas , SimpleMatrix[] a) {
 		
 		for (int i = 0 ; i < thetas.length ; i++) {
 			
 			// Feedforward one layer
-			a = sigmoid(a.mult(thetas[i].transpose()));
+			z[i + 1] = a[i].mult(thetas[i].transpose());
+			a[i + 1] = sigmoid(z[i + 1]);
 			
 			// If not the last feedforward step, then append a bias column of 1s
 			if (i + 1 < thetas.length) {
@@ -164,9 +167,9 @@ public abstract class Brain {
 				//	(0 , 0)	->	(1 , 0)	->	(1  , a10, .. , a1j)
 				//	(. , .)		(. , .)		(.  , .  , .. , .  )
 				//	(0 , 0)		(1 , 0)		(1  , ai0, .. , aij)
-				a = (new SimpleMatrix(a.numRows() , 2))
-						.combine(0 , 0 , new SimpleMatrix(a.numRows() , 1).plus(1))
-						.combine(0 , 1 , a);
+				a[i + 1] = (new SimpleMatrix(a[i + 1].numRows() , 2))
+						.combine(0 , 0 , new SimpleMatrix(a[i + 1].numRows() , 1).plus(1))
+						.combine(0 , 1 , a[i]);
 				
 			}
 			
@@ -183,7 +186,7 @@ public abstract class Brain {
 	 * @param m The number of cases.
 	 * @return The cost J of a's distance from y.
 	 */
-	public static double costFunction(SimpleMatrix a , SimpleMatrix y , int m ) {
+	private static double calculateCost(SimpleMatrix a , SimpleMatrix y , int m ) {
 		
 		int numLabels = y.numCols();
 		
@@ -213,7 +216,7 @@ public abstract class Brain {
 	 * @param lambda The regularization parameter.
 	 * @return The regularized cost J.
 	 */
-	public static double regularizeCost(double jNonReg , SimpleMatrix[] thetas , int m , double lambda) {
+	private static double regularizeCost(double jNonReg , SimpleMatrix[] thetas , int m , double lambda) {
 		
 		// Regularize: J = jNonReg + (lambda / 2m) * [each element of thetas ^2]
 		double thetasSquaredSum = 0;
@@ -226,6 +229,43 @@ public abstract class Brain {
 	}
 	
 	/**
+	 * 
+	 * @param a
+	 * @param x
+	 * @param y
+	 * @param thetas
+	 * @param m
+	 * @return
+	 */
+	private static SimpleMatrix[] backpropagate(SimpleMatrix[] a , SimpleMatrix x , SimpleMatrix y , SimpleMatrix[] thetas , int m) {
+		
+		int numThetas = thetas.length;
+		SimpleMatrix[] deltas = new SimpleMatrix[numThetas]; // Big D matrices
+		SimpleMatrix[] ds = new SimpleMatrix[numThetas]; // Little d matrices (1 vector per case)
+		
+		ds[numThetas - 1] = a[numThetas].minus(y).transpose();
+		
+		// Calculate little d's
+		for (int i = numThetas - 1 ; i > 0 ; i--) {
+			
+			SimpleMatrix sigGrad = sigmoidGradient(z[i]);
+			ds[i - 1] = thetas[i].transpose().mult(ds[i]);
+			ds[i - 1] = ds[i - 1].extractMatrix(1 , SimpleMatrix.END , 0 , SimpleMatrix.END).elementMult(sigGrad);
+			
+		}
+		
+		// Calculate big D's and then the resulting (unregularized) gradient
+		for (int i = 0 ; i < deltas.length ; i++) {
+			
+			deltas[i] = ds[i].mult(a[i]).divide(m);
+			
+		}
+		
+		return deltas;
+		
+	}
+	
+	/**
 	 * Calculates the sigmoid equation for each element in a SimpleMatrix and returns the result.
 	 * @param mx The matrix to apply the sigmoid equation to each element.
 	 * @return The input matrix with sigmoid equation applied to each element
@@ -234,6 +274,18 @@ public abstract class Brain {
 		
 		// Equivalent to 1 / (1 + e^(mx)) for each element in mx
 		return mx.scale(-1).elementExp().plus(1).elementPower(-1);
+		
+	}
+	
+	/**
+	 * 
+	 * @param mx
+	 * @return
+	 */
+	public static SimpleMatrix sigmoidGradient(SimpleMatrix mx) {
+		
+		SimpleMatrix sig = sigmoid(mx);
+		return sig.elementMult(sig.scale(-1).plus(1));
 		
 	}
 
