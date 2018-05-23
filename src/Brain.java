@@ -9,9 +9,6 @@ import org.ejml.simple.SimpleMatrix;
 
 public abstract class Brain {
 	
-	public static final double XAVIER_NORMALIZED_INIT = Math.sqrt(6);
-	public static final int MAX_TRAINING_ITERATIONS = 50;
-	
 	private int numLabels;
 	private int[] layerSizes;
 	protected String[] dataFileLines;
@@ -20,12 +17,25 @@ public abstract class Brain {
 	protected TestCase[] validationSet;
 	protected TestCase[] testSet;
 	protected String[] labels; // All the possible output values of the brain
-	private double[][][] thetas;
+	private SimpleMatrix[] thetas;
 	private Random rand; // Random number generator
 	private double lambda; // Weight regularization parameter
 	
 	private static SimpleMatrix[] gradients; // Most recent gradients calculated by costFunction
+	private static SimpleMatrix gradientsUnrolled; // Same, unrolled
 	private static SimpleMatrix[] z; // Most recent z values calculated by feedForward; z[i] = a[i] before sigmoid
+
+	public static final double XAVIER_NORMALIZED_INIT = Math.sqrt(6);
+	
+	// fmingc constants:
+	public static final int MAX_TRAINING_ITERATIONS = 50;
+	public static final int RED = 1;
+	private static final double RHO = 0.01;
+	private static final double SIG = 0.5; // RHO and SIG are the constants in the Wolfe-Powell conditions
+	private static final double INT = 0.1; // Don't reevaluate within 0.1 of the limit of the current bracket
+	double EXT = 3.0; // Extrapolate maximum 3 times the current bracket
+	double MAX = 20; // Max 20 function evaluations per line search
+	double RATIO = 100; // Maximum allowed slope ratio
 	
 	/**
 	 * Initializes the brain.
@@ -89,22 +99,35 @@ public abstract class Brain {
 		SimpleMatrix x = new SimpleMatrix(casesX);
 		SimpleMatrix y = new SimpleMatrix(casesY);
 		
-		thetas = fmincg(thetas , MAX_TRAINING_ITERATIONS);
+		thetas = fmincg(thetas , x , y , layerSizes , lambda , MAX_TRAINING_ITERATIONS , RED);
 		
 	}
 	
 	/**
 	 * 
+	 * NOT MY ALGORITHM. I TRANSLATED THIS FROM MATLAB USING MY RELEVANT DATA TYPES.
+	 * Copyright (C) 1999, 2000, & 2001, Carl Edward Rasmussen
 	 * @param thetas
+	 * @param x
+	 * @param y
+	 * @param layerSizes
+	 * @param lambda
 	 * @param maxIterations
+	 * @param red
 	 * @return
 	 */
-	private static double[][][] fmincg(double[][][] thetaMatrices , int maxIterations) {
+	private static SimpleMatrix[] fmincg(SimpleMatrix[] thetas , SimpleMatrix x , SimpleMatrix y , int[] layerSizes , double lambda , int maxIterations , int red) {
 		
-		// Convert thetas into SimpleMatrix objects for efficient matrix computation
-		SimpleMatrix[] thetas = new SimpleMatrix[thetaMatrices.length];
-		for (int i = 0 ; i < thetaMatrices.length ; i++)
-			thetas[i] = new SimpleMatrix(thetaMatrices[i]);
+		int length = maxIterations;
+		
+		int count = 0; // Run length counter
+		boolean lsFailed = false; // Whether a previous line search has failed
+		// Left out: declaration of fX, as don't need this to-be-returned value currently
+		double cost = costFunction(thetas , x , y , layerSizes , lambda);
+		// Implied: static gradients = gradients calculated by that cost function execution
+		gradientsUnrolled = unroll(gradients); // Unroll gradients for easier processing
+		count = count + (int)(length < 0 ? 1 : 0);
+		s = 
 		
 	}
 	
@@ -162,7 +185,7 @@ public abstract class Brain {
 			// If not the last feedforward step, then append a bias column of 1s
 			if (i + 1 < thetas.length) {
 				
-				// Workaround of SimpleMatrix limitation of no left-growing:
+				// Workaround to SimpleMatrix limitation of no left-growing:
 				//	(0 , 0)		(1 , 0)		(1  , a00, .. , a0j)
 				//	(0 , 0)	->	(1 , 0)	->	(1  , a10, .. , a1j)
 				//	(. , .)		(. , .)		(.  , .  , .. , .  )
@@ -266,6 +289,55 @@ public abstract class Brain {
 	}
 	
 	/**
+	 * 
+	 * @param thetas
+	 * @param lambda
+	 * @param m
+	 * @return
+	 */
+	private static SimpleMatrix[] regularizeGradients(SimpleMatrix[] thetas , double lambda , int m) {
+		
+		for (int i = 0 ; i < gradients.length ; i++) {
+			
+			SimpleMatrix biasColumn = gradients[i].extractVector(false , 0);
+			gradients[i] = gradients[i].scale(1.0 + (lambda / m)); // Regularization
+			gradients[i] = gradients[i].combine(0 , 0 , biasColumn); // Don't regularize the bias column
+			
+		}
+		
+		return gradients;
+		
+	}
+	
+	/**
+	 * 
+	 * @param mx
+	 */
+	private static SimpleMatrix unroll(SimpleMatrix[] mxs) {
+		
+		SimpleMatrix result = new SimpleMatrix(0 , 1);
+		for (SimpleMatrix mx : mxs) {
+			
+			result = result.combine(SimpleMatrix.END , 1 , unroll(mx));
+			
+		}
+		
+		return result;
+		
+	}
+	
+	/**
+	 * 
+	 * @param mx
+	 */
+	private static SimpleMatrix unroll(SimpleMatrix mx) {
+		
+	    mx.reshape(1, mx.getNumElements());
+	    return mx;
+		
+	}
+	
+	/**
 	 * Calculates the sigmoid equation for each element in a SimpleMatrix and returns the result.
 	 * @param mx The matrix to apply the sigmoid equation to each element.
 	 * @return The input matrix with sigmoid equation applied to each element
@@ -361,12 +433,12 @@ public abstract class Brain {
 	}
 	
 	/**
-	 * Creates a 3D array of randomly initialized weights for every NN connection specified by the layer sizes.
+	 * Creates a matrix of randomly initialized weights for every NN connection specified by the layer sizes.
 	 * @return The 3D array of randomly initialized weights.
 	 */
-	private double[][][] randInitializeNNWeights() {
+	private SimpleMatrix[] randInitializeNNWeights() {
 		
-		double[][][] result = new double[layerSizes.length - 1][][];
+		SimpleMatrix[] result = new SimpleMatrix[layerSizes.length - 1][][];
 		for (int x = 0 ; x < layerSizes.length - 1 ; x++) {
 			
 			result[x] = randInitializeWeights(layerSizes[x] , layerSizes[x + 1]);
@@ -378,12 +450,12 @@ public abstract class Brain {
 	}
 	
 	/**
-	 * Creates a 2D array of randomly initialized weights (theta) for the connections between layers of specified sizes, in->out.
+	 * Creates a matrix of randomly initialized weights (theta) for the connections between layers of specified sizes, in->out.
 	 * @param in The size of the input layer of the connection.
 	 * @param out The size of the output layer of the connection.
-	 * @return The 2D array of randomly initialized weights (theta) for the connections between the specified input and output layers.
+	 * @return The matrix of randomly initialized weights (theta) for the connections between input and output layers of the specified sizes.
 	 */
-	private double[][] randInitializeWeights(int in , int out) {
+	private SimpleMatrix randInitializeWeights(int in , int out) {
 		
 		double[][] result = new double[out][in + 1]; // +1 for the bias unit
 		
@@ -400,7 +472,7 @@ public abstract class Brain {
 			
 		}
 		
-		return result;
+		return new SimpleMatrix(result);
 		
 	}
 }
