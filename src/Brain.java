@@ -22,7 +22,6 @@ public abstract class Brain {
 	private double lambda; // Weight regularization parameter
 	
 	private static SimpleMatrix[] gradients; // Most recent gradients calculated by costFunction
-	private static SimpleMatrix gradientsUnrolled; // Same, unrolled
 	private static SimpleMatrix[] z; // Most recent z values calculated by feedForward; z[i] = a[i] before sigmoid
 
 	public static final double XAVIER_NORMALIZED_INIT = Math.sqrt(6);
@@ -33,9 +32,9 @@ public abstract class Brain {
 	private static final double RHO = 0.01;
 	private static final double SIG = 0.5; // RHO and SIG are the constants in the Wolfe-Powell conditions
 	private static final double INT = 0.1; // Don't reevaluate within 0.1 of the limit of the current bracket
-	double EXT = 3.0; // Extrapolate maximum 3 times the current bracket
-	double MAX = 20; // Max 20 function evaluations per line search
-	double RATIO = 100; // Maximum allowed slope ratio
+	private static final double EXT = 3.0; // Extrapolate maximum 3 times the current bracket
+	private static final int MAX = 20; // Max 20 function evaluations per line search
+	private static final double RATIO = 100; // Maximum allowed slope ratio
 	
 	/**
 	 * Initializes the brain.
@@ -123,11 +122,116 @@ public abstract class Brain {
 		int count = 0; // Run length counter
 		boolean lsFailed = false; // Whether a previous line search has failed
 		// Left out: declaration of fX, as don't need this to-be-returned value currently
-		double cost = costFunction(thetas , x , y , layerSizes , lambda);
+		double cost1 = costFunction(thetas , x , y , layerSizes , lambda);
 		// Implied: static gradients = gradients calculated by that cost function execution
-		gradientsUnrolled = unroll(gradients); // Unroll gradients for easier processing
-		count = count + (int)(length < 0 ? 1 : 0);
-		s = 
+		SimpleMatrix gradientsUnrolled1 = unroll(gradients); // Unroll gradients for easier processing
+		count += (length < 0 ? 1 : 0);
+		SimpleMatrix s = gradientsUnrolled1.scale(-1); // Search direction
+		double d1 = gradientsUnrolled1.transpose().mult(s).get(0 , 0); // Slope
+		double z1 = red / (1 - d1); // Initial step
+		
+		double cost0;
+		SimpleMatrix x0;
+		SimpleMatrix gradientsUnrolled0;
+		double cost2;
+		SimpleMatrix gradientsUnrolled2;
+		double d2;
+		double z2;
+		double cost3;
+		double d3;
+		double z3;
+		int M;
+		boolean success;
+		double limit;
+		
+		while (count < length) {
+			
+			// Iter
+			count += (length > 0 ? 1 : 0);
+			
+			// Copy current vals
+			cost0 = cost1;
+			x0 = x;
+			gradientsUnrolled0 = gradientsUnrolled1;
+			
+			// Begin line search
+			x = x.plus(s.scale(z1));
+			
+			cost2 = costFunction(thetas , x , y , layerSizes , lambda);
+			gradientsUnrolled2 = unroll(gradients);
+			
+			count += (length < 0 ? 1 : 0);
+			
+			d2 = gradientsUnrolled2.transpose().mult(s).get(0 , 0);
+			
+			// Init point 3 equal to point 1
+			cost3 = cost1;
+			d3 = d1;
+			z3 = z1 * -1;
+			
+			if (length > 0)
+				M = MAX;
+			else
+				M = Math.min(MAX , -1 * length - count);
+			
+			success = false;
+			limit = -1;
+			
+			while (true) {
+				
+				while (((cost2 > cost1 + z1 * RHO * d1) || (d2 > -1 * SIG * d1)) && M > 0) {
+					
+					limit = z1;
+					
+					if (cost2 > cost1) { // Then quadratic fit:
+						
+						z2 = z3 - (0.5 * d3 * z3 * z3) / (d3 * z3 + cost2 - cost3);
+					
+					}
+					else { // Cubic fit:
+						
+						double a = 6 * (cost2 - cost3) / z3 + 3 * (d2 + d3);
+						double b = 3 * (cost3 - cost2) - z3 * (d3 + 2 * d2);
+						if (a != 0)
+							z2 = (Math.sqrt(b * b - a * d2 * z3 * z3) - b) / a;
+						else // In case of divide by 0
+							z2 = z3 / 2;
+						
+					}
+					
+					z2 = Math.max(Math.min(z2 , INT * z3) , (1 - INT) * z3); // Don't accept too close to limits
+					z1 += z2; // Update step
+					
+					// Continue line search
+					x = x.plus(s.scale(z2));
+					
+					cost2 = costFunction(thetas , x , y , layerSizes , lambda);
+					gradientsUnrolled2 = unroll(gradients);
+					
+					M -= 1;
+					count += (length < 0 ? 1 : 0);
+					
+					d2 = gradientsUnrolled2.transpose().mult(s).get(0 , 0);
+					z3 = z3 - z2; // z3 now relative to z2's location
+					
+				}
+				
+				if (cost2 > z1 * RHO * d1 || d2 > -1 * SIG * d1) // Failure
+					break;
+				else if (d2 > SIG * d1) { // Success
+					
+					success = true;
+					break;
+					
+				}
+				else if (M == 0) // Failure
+					break;
+				
+				
+				
+			}
+			
+		}
 		
 	}
 	
@@ -438,7 +542,7 @@ public abstract class Brain {
 	 */
 	private SimpleMatrix[] randInitializeNNWeights() {
 		
-		SimpleMatrix[] result = new SimpleMatrix[layerSizes.length - 1][][];
+		SimpleMatrix[] result = new SimpleMatrix[layerSizes.length - 1];
 		for (int x = 0 ; x < layerSizes.length - 1 ; x++) {
 			
 			result[x] = randInitializeWeights(layerSizes[x] , layerSizes[x + 1]);
