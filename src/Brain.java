@@ -13,9 +13,9 @@ public abstract class Brain {
 	private int[] layerSizes;
 	protected String[] dataFileLines;
 	protected TestCase[] cases;
-	protected TestCase[] trainingSet;
-	protected TestCase[] validationSet;
-	protected TestCase[] testSet;
+	protected TestCase[] trainingCases;
+	protected TestCase[] validationCases;
+	protected TestCase[] testCases;
 	protected String[] labels; // All the possible output values of the brain
 	private SimpleMatrix[] thetas;
 	private Random rand; // Random number generator
@@ -25,6 +25,9 @@ public abstract class Brain {
 	private static SimpleMatrix[] z; // Most recent z values calculated by feedForward; z[i] = a[i] before sigmoid
 
 	public static final double XAVIER_NORMALIZED_INIT = Math.sqrt(6);
+	public static final double TRAINING_SPLIT = 0.5;
+	public static final double VALIDATION_SPLIT = 0.25;
+	public static final double TEST_SPLIT = 1 - (TRAINING_SPLIT + VALIDATION_SPLIT);
 	
 	// fmingc constants:
 	public static final int MAX_TRAINING_ITERATIONS = 50;
@@ -75,7 +78,26 @@ public abstract class Brain {
 	 */
 	public void train() {
 		
-		// Set casesX as a matrix of inputs with a bias column of 1s
+		splitCases(); // Split cases into training, validation, and test sets
+		
+		// Set case inputs as matrix of inputs with a bias column of 1s
+		double[][] trainingX = TestCase.casesToX(trainingCases);
+		double[][] validationX = TestCase.casesToX(validationCases);
+		
+		// Recode known answers as an array of vectors with 1 at the index of the y value, 0 at all other indices
+		double[][] trainingY = TestCase.casesToY(trainingCases);
+		double[][] validationY = TestCase.casesToY(validationCases);
+		
+		// Convert into SimpleMatrix objects for efficient matrix computation
+		SimpleMatrix trainingMxX = new SimpleMatrix(trainingX);
+		SimpleMatrix trainingMxY = new SimpleMatrix(trainingY);
+		SimpleMatrix validationMxX = new SimpleMatrix(validationX);
+		SimpleMatrix validationMxY = new SimpleMatrix(validationY);
+		
+		// Train from training cases
+		thetas = fmincg(thetas , trainingMxX , trainingMxY , layerSizes , lambda , MAX_TRAINING_ITERATIONS , RED);
+		
+		// MOVE THIS TO TestCase.casesToX
 		double[][] casesX = new double[cases.length][layerSizes[0]];
 		for (int i = 0 ; i < cases.length ; i++) {
 			
@@ -89,149 +111,10 @@ public abstract class Brain {
 			
 		}
 		
-		// Recode known answers as an array of vectors with 1 at the index of the y value, 0 at all other indices:
+		// MOVE THIS TO TestCase.casesToY
 		double[][] casesY = new double[cases.length][layerSizes[layerSizes.length - 1]];
 		for (int i = 0 ; i < cases.length ; i++)
 			casesY[i][cases[i].getExpectedOutput()] = 1;
-		
-		// Convert into SimpleMatrix objects for efficient matrix computation
-		SimpleMatrix x = new SimpleMatrix(casesX);
-		SimpleMatrix y = new SimpleMatrix(casesY);
-		
-		thetas = fmincg(thetas , x , y , layerSizes , lambda , MAX_TRAINING_ITERATIONS , RED);
-		
-	}
-	
-	/**
-	 * 
-	 * NOT MY ALGORITHM. I TRANSLATED THIS FROM MATLAB USING MY RELEVANT DATA TYPES.
-	 * Copyright (C) 1999, 2000, & 2001, Carl Edward Rasmussen
-	 * @param thetas
-	 * @param x
-	 * @param y
-	 * @param layerSizes
-	 * @param lambda
-	 * @param maxIterations
-	 * @param red
-	 * @return
-	 */
-	private static SimpleMatrix[] fmincg(SimpleMatrix[] thetas , SimpleMatrix x , SimpleMatrix y , int[] layerSizes , double lambda , int maxIterations , int red) {
-		
-		int length = maxIterations;
-		
-		int count = 0; // Run length counter
-		boolean lsFailed = false; // Whether a previous line search has failed
-		// Left out: declaration of fX, as don't need this to-be-returned value currently
-		double cost1 = costFunction(thetas , x , y , layerSizes , lambda);
-		// Implied: static gradients = gradients calculated by that cost function execution
-		SimpleMatrix gradientsUnrolled1 = unroll(gradients); // Unroll gradients for easier processing
-		count += (length < 0 ? 1 : 0);
-		SimpleMatrix s = gradientsUnrolled1.scale(-1); // Search direction
-		double d1 = gradientsUnrolled1.transpose().mult(s).get(0 , 0); // Slope
-		double z1 = red / (1 - d1); // Initial step
-		
-		double cost0;
-		SimpleMatrix x0;
-		SimpleMatrix gradientsUnrolled0;
-		double cost2;
-		SimpleMatrix gradientsUnrolled2;
-		double d2;
-		double z2;
-		double cost3;
-		double d3;
-		double z3;
-		int M;
-		boolean success;
-		double limit;
-		
-		while (count < length) {
-			
-			// Iter
-			count += (length > 0 ? 1 : 0);
-			
-			// Copy current vals
-			cost0 = cost1;
-			x0 = x;
-			gradientsUnrolled0 = gradientsUnrolled1;
-			
-			// Begin line search
-			x = x.plus(s.scale(z1));
-			
-			cost2 = costFunction(thetas , x , y , layerSizes , lambda);
-			gradientsUnrolled2 = unroll(gradients);
-			
-			count += (length < 0 ? 1 : 0);
-			
-			d2 = gradientsUnrolled2.transpose().mult(s).get(0 , 0);
-			
-			// Init point 3 equal to point 1
-			cost3 = cost1;
-			d3 = d1;
-			z3 = z1 * -1;
-			
-			if (length > 0)
-				M = MAX;
-			else
-				M = Math.min(MAX , -1 * length - count);
-			
-			success = false;
-			limit = -1;
-			
-			while (true) {
-				
-				while (((cost2 > cost1 + z1 * RHO * d1) || (d2 > -1 * SIG * d1)) && M > 0) {
-					
-					limit = z1;
-					
-					if (cost2 > cost1) { // Then quadratic fit:
-						
-						z2 = z3 - (0.5 * d3 * z3 * z3) / (d3 * z3 + cost2 - cost3);
-					
-					}
-					else { // Cubic fit:
-						
-						double a = 6 * (cost2 - cost3) / z3 + 3 * (d2 + d3);
-						double b = 3 * (cost3 - cost2) - z3 * (d3 + 2 * d2);
-						if (a != 0)
-							z2 = (Math.sqrt(b * b - a * d2 * z3 * z3) - b) / a;
-						else // In case of divide by 0
-							z2 = z3 / 2;
-						
-					}
-					
-					z2 = Math.max(Math.min(z2 , INT * z3) , (1 - INT) * z3); // Don't accept too close to limits
-					z1 += z2; // Update step
-					
-					// Continue line search
-					x = x.plus(s.scale(z2));
-					
-					cost2 = costFunction(thetas , x , y , layerSizes , lambda);
-					gradientsUnrolled2 = unroll(gradients);
-					
-					M -= 1;
-					count += (length < 0 ? 1 : 0);
-					
-					d2 = gradientsUnrolled2.transpose().mult(s).get(0 , 0);
-					z3 = z3 - z2; // z3 now relative to z2's location
-					
-				}
-				
-				if (cost2 > z1 * RHO * d1 || d2 > -1 * SIG * d1) // Failure
-					break;
-				else if (d2 > SIG * d1) { // Success
-					
-					success = true;
-					break;
-					
-				}
-				else if (M == 0) // Failure
-					break;
-				
-				
-				
-			}
-			
-		}
 		
 	}
 	
@@ -522,17 +405,17 @@ public abstract class Brain {
 	}
 	
 	/**
-	 * Splits all the cases provided into training set, validation set, and test set 50/25/25
+	 * Splits all the cases provided into training set, validation set, and test set with const ratios provided above
 	 */
 	protected void splitCases() {
 		
 		int numCases = cases.length;
-		int trainingSplit = (int) (numCases / 2.0);
-		int validationSplit = (int) (trainingSplit + numCases / 4.0);
+		int trainingSplit = (int) (numCases * TRAINING_SPLIT);
+		int validationSplit = (int) (trainingSplit + numCases * VALIDATION_SPLIT);
 		
-		trainingSet = Arrays.copyOfRange(cases , 0 , trainingSplit);
-		validationSet = Arrays.copyOfRange(cases , trainingSplit , validationSplit);
-		testSet = Arrays.copyOfRange(cases , validationSplit , cases.length);
+		trainingCases = Arrays.copyOfRange(cases , 0 , trainingSplit);
+		validationCases = Arrays.copyOfRange(cases , trainingSplit , validationSplit);
+		testCases = Arrays.copyOfRange(cases , validationSplit , cases.length);
 		
 	}
 	
@@ -579,4 +462,233 @@ public abstract class Brain {
 		return new SimpleMatrix(result);
 		
 	}
-}
+
+
+	/**
+	 * 
+	 * NOT MY ALGORITHM. I TRANSLATED THIS FROM MATLAB USING MY RELEVANT DATA TYPES.
+	 * Copyright (C) 1999, 2000, & 2001, Carl Edward Rasmussen
+	 * @param thetas
+	 * @param x
+	 * @param y
+	 * @param layerSizes
+	 * @param lambda
+	 * @param maxIterations
+	 * @param red
+	 * @return
+	 */
+	private static SimpleMatrix[] fmincg(SimpleMatrix[] thetas , SimpleMatrix x , SimpleMatrix y , int[] layerSizes , double lambda , int maxIterations , int red) {
+		
+		int length = maxIterations;
+		
+		int count = 0; // Run length counter
+		boolean lsFailed = false; // Whether a previous line search has failed
+		// Left out: declaration of fX, as don't need this to-be-returned value currently
+		double cost1 = costFunction(thetas , x , y , layerSizes , lambda);
+		// Implied: static gradients = gradients calculated by that cost function execution
+		SimpleMatrix gradientsUnrolled1 = unroll(gradients); // Unroll gradients for easier processing
+		count += (length < 0 ? 1 : 0);
+		SimpleMatrix s = gradientsUnrolled1.scale(-1); // Search direction
+		double slope1 = gradientsUnrolled1.transpose().mult(s).get(0 , 0); // Slope
+		double z1 = red / (1 - slope1); // Initial step
+		
+		double cost0;
+		SimpleMatrix x0;
+		SimpleMatrix gradientsUnrolled0;
+		double cost2;
+		SimpleMatrix gradientsUnrolled2;
+		double slope2;
+		double z2;
+		double cost3;
+		double slope3;
+		double z3;
+		int M;
+		boolean success;
+		double limit;
+		double a;
+		double b;
+		
+		while (count < Math.abs(length)) {
+			
+			// Iter
+			count += (length > 0 ? 1 : 0);
+			
+			// Copy current vals
+			cost0 = cost1;
+			x0 = x;
+			gradientsUnrolled0 = gradientsUnrolled1;
+			
+			// Begin line search
+			x = x.plus(s.scale(z1));
+			
+			cost2 = costFunction(thetas , x , y , layerSizes , lambda);
+			gradientsUnrolled2 = unroll(gradients);
+			
+			count += (length < 0 ? 1 : 0);
+			
+			slope2 = gradientsUnrolled2.transpose().mult(s).get(0 , 0);
+			
+			// Init point 3 equal to point 1
+			cost3 = cost1;
+			slope3 = slope1;
+			z3 = z1 * -1;
+			
+			if (length > 0)
+				M = MAX;
+			else
+				M = Math.min(MAX , -1 * length - count);
+			
+			success = false;
+			limit = -1;
+			
+			while (true) {
+				
+				while (((cost2 > cost1 + z1 * RHO * slope1) || (slope2 > -1 * SIG * slope1)) && M > 0) {
+					
+					limit = z1;
+					
+					if (cost2 > cost1) { // Then quadratic fit:
+						
+						z2 = z3 - (0.5 * slope3 * z3 * z3) / (slope3 * z3 + cost2 - cost3);
+					
+					}
+					else { // Cubic fit:
+						
+						a = 6 * (cost2 - cost3) / z3 + 3 * (slope2 + slope3);
+						b = 3 * (cost3 - cost2) - z3 * (slope3 + 2 * slope2);
+						if (a != 0)
+							z2 = (Math.sqrt(b * b - a * slope2 * z3 * z3) - b) / a;
+						else // In case of divide by 0
+							z2 = z3 / 2;
+						
+					}
+					
+					z2 = Math.max(Math.min(z2 , INT * z3) , (1 - INT) * z3); // Don't accept too close to limits
+					z1 += z2; // Update step
+					
+					// Continue line search
+					x = x.plus(s.scale(z2));
+					
+					cost2 = costFunction(thetas , x , y , layerSizes , lambda);
+					gradientsUnrolled2 = unroll(gradients);
+					
+					M -= 1;
+					count += (length < 0 ? 1 : 0);
+					
+					slope2 = gradientsUnrolled2.transpose().mult(s).get(0 , 0);
+					z3 = z3 - z2; // z3 now relative to z2's location
+					
+				}
+				
+				if (cost2 > cost1 + z1 * RHO * slope1 || slope2 > -1 * SIG * slope1) // Failure
+					break;
+				else if (slope2 > SIG * slope1) { // Success
+					
+					success = true;
+					break;
+					
+				}
+				else if (M == 0) // Failure
+					break;
+				
+				// Cubic extrapolation
+				a = 6 * (cost2 - cost3) / z3 + 3 * (slope2 + slope3);
+				b = 3 * (cost3 - cost2) - z3 * (slope3 + 2 * slope2);
+				
+				double sqrtEval = b * b - a * slope2 * z3 * z3;
+				double denom; // Only evaluate once decided sqrt will be real
+				if (sqrtEval < 0 || (denom = b + Math.sqrt(sqrtEval)) == 0) { // If sqrt imaginary or div by 0
+					
+					if (limit < -0.5) // If no upper limit
+						z2 = z1 * (EXT - 1); // Extrapolate max amount
+					else
+						z2 = (limit - z1) / 2; // Otherwise bisect
+					
+				} else {
+					
+					z2 = -1 * slope2 * z3 * z3 / denom; // Intended calculation, no errors
+					
+					if (limit > -0.5 && z2 + z1 > limit) // If extrapolation beyond max
+						z2 = (limit - z1) / 2; // Then bisect
+					else if (limit < -0.5 && z2 + z1 > z1 * EXT) // If extrapolation beyond limit
+						z2 = z1 * (EXT - 1); // Set to extrapolation limit
+					else if (z2 < -1 * z3 * INT)
+						z2 = -1 * z3 * INT;
+					else if (limit > -0.5 && z2 < (limit - z1) * (1 - INT)) // If too close to limit
+						z2 = (limit - z1) * (1 - INT);
+					
+				}
+				
+				cost3 = cost2; // Set point 3 <- point 2
+				slope3 = slope2;
+				z3 = -z2;
+				
+				z1 = z1 + z2; // Update current estimates
+				x = x.plus(s.scale(z2));
+				
+				cost2 = costFunction(thetas , x , y , layerSizes , lambda);
+				gradientsUnrolled2 = unroll(gradients);
+				
+				M = M - 1;
+				count += (length < 0 ? 1 : 0);
+				
+				slope2 = gradientsUnrolled2.transpose().mult(s).get(0 , 0);
+				
+			} // END of line search
+			
+			if (success) {
+				
+				cost1 = cost2;
+				
+				// Polack-Ribiere direction:
+				s = s.scale(
+						(gradientsUnrolled2.transpose().mult(gradientsUnrolled2).get(0 , 0)
+						- gradientsUnrolled1.transpose().mult(gradientsUnrolled2).get(0 , 0))
+						/ (gradientsUnrolled1.transpose().mult(gradientsUnrolled1).get(0 , 0))
+						).minus(gradientsUnrolled2);
+				
+				// Swap derivatives:
+				SimpleMatrix temp = gradientsUnrolled1.copy();
+				gradientsUnrolled1 = gradientsUnrolled2;
+				gradientsUnrolled2 = temp;
+				
+				slope2 = gradientsUnrolled1.transpose().mult(s).get(0 , 0); // Calculate new slope
+				if (slope2 > 0) { // If new slope is not negative (it must be), use steepest direction:
+					
+					s = gradientsUnrolled1.scale(-1);
+					slope2 = s.transpose().scale(-1).mult(s).get(0 , 0);
+					
+				}
+				
+				z1 *= Math.min(RATIO , slope1 / (slope2 - Double.MIN_VALUE)); // Slope ratio, capped at RATIO
+				slope1 = slope2;
+				lsFailed = false;
+				
+			} else { // Failure
+				
+				x = x0; // Set point 1 <- before failed line search
+				cost1 = cost0;
+				gradientsUnrolled1 = gradientsUnrolled0;
+				
+				if (lsFailed || count > Math.abs(length)) // If ls failed twice in a row or run out of time:
+					break;
+				
+				// Swap derivatives:
+				SimpleMatrix temp = gradientsUnrolled1.copy();
+				gradientsUnrolled1 = gradientsUnrolled2;
+				gradientsUnrolled2 = temp;
+				
+				s = gradientsUnrolled1.scale(-1); // Try steepest direction
+				slope2 = s.transpose().scale(-1).mult(s).get(0 , 0);
+				
+				z1 = 1.0 / (1 - slope1);
+				
+				lsFailed = true;
+				
+			}
+			
+		}
+		
+	} // END fmincg
+	
+} // END class Brain
