@@ -11,7 +11,7 @@ public class ImageBrain extends Brain {
 	private final int PRE_DATA_LINES = 1;
 	
 	private int[][] rgb; // Defined in loadData, NOT in constructor
-	private int[] unwrappedRgb; // Defined in loadData, NOT in constructor
+	private int[] unrolledRgb; // Defined in loadData, NOT in constructor
 
 	/**
 	 * 
@@ -60,7 +60,7 @@ public class ImageBrain extends Brain {
 		// Because an image is is represented with height as the first dimension of a matrix, 
 		// width as the second, this divides 1st dimension / 2nd dimension:
 		double dimRatio = height / width;
-
+		
 		// Re-set brain's test case size to actual number of test cases
 		int numImages = super.dataFileLines.length - PRE_DATA_LINES;
 		super.cases = new TestCase[numImages];
@@ -70,9 +70,10 @@ public class ImageBrain extends Brain {
 			imageDirectory = imageDirectory + '/';
 		
 		// Read all possible labels from file, all on 1st line separated by commas (END WITH A COMMA)
-		int start = 0 , end , x = 0;
-		while ((end = super.dataFileLines[0].substring(start).indexOf(',')) != -1){
+		int start = 0 , nextLabelLength , x = 0;
+		while ((nextLabelLength = super.dataFileLines[0].substring(start).indexOf(',')) != -1){
 			
+			int end = start + nextLabelLength;
 			super.labels[x] = super.dataFileLines[0].substring(start, end);
 			start = end + 1;
 			x++;
@@ -80,7 +81,9 @@ public class ImageBrain extends Brain {
 		}
 		
 		// Read the image data file:
-		for (x = PRE_DATA_LINES ; x <= numImages ; x++) { // Ignore the 2nd line, which provides readability in the file itself
+		for (x = PRE_DATA_LINES ; x <= numImages ; x++) {
+			
+			System.out.println("Reading image " + (x - PRE_DATA_LINES) + " / " + numImages);
 			
 			int split = super.dataFileLines[x].indexOf(',');
 			
@@ -93,7 +96,7 @@ public class ImageBrain extends Brain {
 			String label = super.dataFileLines[x].substring(split + 1);
 			
 			// Read in pixel data
-			double[] pixelsUnwrapped = new double[imageSize];
+			double[] pixelsunrolled = new double[imageSize];
 			BufferedImage image = null;
 			try {
 				
@@ -108,23 +111,23 @@ public class ImageBrain extends Brain {
 				continue;
 				
 			}
-			int[] argb = image.getRGB(0 , 0 , image.getWidth() , image.getHeight() , null , 0 , 1);
+			int[] argb = image.getRGB(0 , 0 , image.getWidth() , image.getHeight() , null , 0 , image.getWidth());
 			
 			// MUST ASSUME pixel data is in correct orientation, dimensions
 			// Extract r,g,b components from TYPE_INT_ARGB:
 			// First, convert int into its four component bytes
 			byte[][] rgbBytes = new byte[argb.length][4];
-			for (x = 0 ; x < argb.length ; x++)
-				rgbBytes[x]= ByteBuffer.allocate(4).putInt(argb[x]).array();
+			for (int i = 0 ; i < argb.length ; i++)
+				rgbBytes[i]= ByteBuffer.allocate(4).putInt(argb[i]).array();
 			
 			// Now, convert these bytes to ints and unwrap into 1D: reds then greens then blues
 			rgb = new int[rgbBytes.length][3];
-			unwrappedRgb = new int[3 * rgb.length];
-			for (x = 0 ; x < rgbBytes.length ; x++) {
+			unrolledRgb = new int[3 * rgb.length];
+			for (int i = 0 ; i < rgbBytes.length ; i++) {
 				
-				unwrappedRgb[x] = rgb[x][0] = rgbBytes[x][1] & 0xFF;
-				unwrappedRgb[rgb.length + x] = rgb[x][1] = rgbBytes[x][2] & 0xFF;
-				unwrappedRgb[2 * rgb.length + x] = rgb[x][2] = rgbBytes[x][3] & 0xFF;
+				unrolledRgb[i] = rgb[i][0] = rgbBytes[i][1] & 0xFF;
+				unrolledRgb[rgb.length + i] = rgb[i][1] = rgbBytes[i][2] & 0xFF;
+				unrolledRgb[2 * rgb.length + i] = rgb[i][2] = rgbBytes[i][3] & 0xFF;
 				
 			}
 			
@@ -132,7 +135,7 @@ public class ImageBrain extends Brain {
 			
 			// Remove the white background if presence of one is mandated
 			if (whiteBackground)
-				unwrappedRgb = ImageProcessor.removeBackground(unwrappedRgb , rgb.length);
+				unrolledRgb = ImageProcessor.removeBackground(unrolledRgb , rgb.length);
 			
 			// Do other processing - filtering (Gaussian, Laplacian?), edge detection, etc
 			// Modify super's input layer size to match size of modified data
@@ -140,11 +143,9 @@ public class ImageBrain extends Brain {
 			// - edge detect then scale all images to same horizontal scale? Make processed dimensions square to accommodate out of bounds?
 			
 			// Put it all into a TestCase object and add it to the brain's list
-			super.cases[x - PRE_DATA_LINES] = new TestCase(pixelsUnwrapped , label , imageName);
+			super.cases[x - PRE_DATA_LINES] = new TestCase(pixelsunrolled , label , imageName);
 			
 		}
-		
-		super.splitCases();
 		
 	}
 	
@@ -152,13 +153,13 @@ public class ImageBrain extends Brain {
 	
 	private static class ImageProcessor {
 		
-		private static int[] removeBackground(int[] unwrappedRgb , int gap) {
+		private static int[] removeBackground(int[] unrolledRgb , int gap) {
 			
-			// Remove background in unwrappedRgb -- see image processing lecture iii
+			// Remove background in unrolledRgb -- see image processing lecture iii
 			
 			// Edge detection using internal & external gradient
 			
-			return unwrappedRgb;
+			return unrolledRgb;
 			
 		}
 		

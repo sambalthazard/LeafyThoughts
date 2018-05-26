@@ -15,13 +15,7 @@ public class TestCase {
 		this.input = input;
 		this.expectedOutputString = expectedOutputString;
 		
-		// Set expectedOutput to next value in count if output DNE yet, if it does, assign it that value
-		if ((expectedOutput = allOutputs.indexOf(expectedOutputString)) == -1) {
-			
-			expectedOutput = count++;
-			allOutputs.add(expectedOutputString);
-			
-		}
+		assignExpectedOutput();
 		
 	}
 	
@@ -30,6 +24,23 @@ public class TestCase {
 		this.input = input;
 		this.expectedOutputString = expectedOutputString;
 		this.name = name;
+		
+		assignExpectedOutput();
+		
+	}
+	
+	/**
+	 * Set expectedOutput to next value in count if output DNE yet, if it does, assign it that value
+	 */
+	private void assignExpectedOutput() {
+		
+		if ((expectedOutput = allOutputs.indexOf(expectedOutputString)) == -1) {
+			
+			System.out.println("New possible output: " + expectedOutputString);
+			expectedOutput = count++;
+			allOutputs.add(expectedOutputString);
+			
+		}
 		
 	}
 	
@@ -76,6 +87,7 @@ public class TestCase {
 		
 		int outputLength = allOutputs.size();
 		double[][] casesY = new double[cases.length][outputLength];
+		
 		for (int i = 0 ; i < cases.length ; i++)
 			casesY[i][cases[i].getExpectedOutput()] = 1;
 		

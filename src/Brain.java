@@ -75,8 +75,9 @@ public abstract class Brain {
 	
 	/**
 	 * Trains the neural network after data is loaded into test case sets.
+	 * @throws BrainException 
 	 */
-	public void train() {
+	public void train() throws BrainException {
 		
 		splitCases(); // Split cases into training, validation, and test sets
 		
@@ -91,7 +92,7 @@ public abstract class Brain {
 		// Convert into SimpleMatrix objects for efficient matrix computation
 		SimpleMatrix trainingMxX = new SimpleMatrix(trainingX);
 		SimpleMatrix trainingMxY = new SimpleMatrix(trainingY);
-		SimpleMatrix validationMxX = new SimpleMatrix(validationX);
+		SimpleMatrix validationMxX = new SimpleMatrix(validationX); // STILL NEED TO USE THESE TO TELL FMINCG WHEN TO STOP
 		SimpleMatrix validationMxY = new SimpleMatrix(validationY);
 		
 		// Train from training cases
@@ -147,6 +148,9 @@ public abstract class Brain {
 		for (int i = 0 ; i < thetas.length ; i++) {
 			
 			// Feedforward one layer
+
+			System.out.println("Thetas: " + thetas.length + ": " + thetas[i].numCols() + "," + thetas[i].numRows() + "; "
+					 + a[i].numCols() + "," + a[i].numRows());
 			z[i + 1] = a[i].mult(thetas[i].transpose());
 			a[i + 1] = sigmoid(z[i + 1]);
 			
@@ -302,7 +306,8 @@ public abstract class Brain {
 	 */
 	private static SimpleMatrix unroll(SimpleMatrix mx) {
 		
-	    mx.reshape(1, mx.getNumElements());
+	    SimpleMatrix newMx = mx.copy();
+	    newMx.reshape(1, mx.getNumElements());
 	    return mx;
 		
 	}
@@ -393,7 +398,9 @@ public abstract class Brain {
 			bufferedReader.close();
 			
 			// Reduce the array size to not have any empty trailing entries
-			
+			int actualEnd;
+			for (actualEnd = content.length ; content[actualEnd - 1] == null && actualEnd > 0 ; actualEnd--);
+			content = Arrays.copyOfRange(content , 0 , actualEnd);
 			
 			return content;
             
@@ -413,12 +420,16 @@ public abstract class Brain {
 	
 	/**
 	 * Splits all the cases provided into training set, validation set, and test set with const ratios provided above
+	 * @throws BrainException 
 	 */
-	protected void splitCases() {
+	protected void splitCases() throws BrainException {
 		
 		int numCases = cases.length;
 		int trainingSplit = (int) (numCases * TRAINING_SPLIT);
 		int validationSplit = (int) (trainingSplit + numCases * VALIDATION_SPLIT);
+		
+		if (trainingSplit == 0 || validationSplit == trainingSplit || cases.length == validationSplit)
+			throw new BrainException("Not enough cases supplied to split into training/validation/test sets all of size > 0 according to designated allocation ratios.");
 		
 		trainingCases = Arrays.copyOfRange(cases , 0 , trainingSplit);
 		validationCases = Arrays.copyOfRange(cases , trainingSplit , validationSplit);
