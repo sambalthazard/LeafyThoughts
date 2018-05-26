@@ -280,6 +280,7 @@ public abstract class Brain {
 	/**
 	 * 
 	 * @param mx
+	 * @return
 	 */
 	private static SimpleMatrix unroll(SimpleMatrix[] mxs) {
 		
@@ -297,11 +298,36 @@ public abstract class Brain {
 	/**
 	 * 
 	 * @param mx
+	 * @return
 	 */
 	private static SimpleMatrix unroll(SimpleMatrix mx) {
 		
 	    mx.reshape(1, mx.getNumElements());
 	    return mx;
+		
+	}
+	
+	/**
+	 * 
+	 * @param mx
+	 * @return
+	 */
+	private static SimpleMatrix[] reshape(SimpleMatrix mx , int[] dimensions) {
+		
+		SimpleMatrix[] reshaped = new SimpleMatrix[dimensions.length / 2];
+		
+		int lastEnd = 0;
+		for (int i = 0 ; i < reshaped.length ; i++) {
+			
+			int start = lastEnd;
+			int end = start + dimensions[i * 2] + dimensions[i * 2 + 1];
+			lastEnd = end;
+			
+			reshaped[i] = mx.extractMatrix(start , end , 0 , SimpleMatrix.END);
+			
+		}
+		
+		return reshaped;
 		
 	}
 	
@@ -672,7 +698,16 @@ public abstract class Brain {
 			
 		}
 		
-		return roll(weights);
+		// Set dimensions for reshape
+		int[] dimensions = new int[thetas.length];
+		for (int i = 0 ; i < thetas.length ; i++) {
+			
+			dimensions[i * 2] = thetas[i].numCols();
+			dimensions[i * 2 + 1] = thetas[i].numRows();
+			
+		}
+		
+		return reshape(weights , dimensions);
 		
 	} // END fmincg
 	
