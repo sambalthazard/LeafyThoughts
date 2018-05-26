@@ -97,25 +97,6 @@ public abstract class Brain {
 		// Train from training cases
 		thetas = fmincg(thetas , trainingMxX , trainingMxY , layerSizes , lambda , MAX_TRAINING_ITERATIONS , RED);
 		
-		// MOVE THIS TO TestCase.casesToX
-		double[][] casesX = new double[cases.length][layerSizes[0]];
-		for (int i = 0 ; i < cases.length ; i++) {
-			
-			casesX[i][0] = 1; // bias column
-			
-			for (int j = 0 ; j < layerSizes[0] ; j++) {
-				
-				casesX[i][j + 1] = cases[i].getInput()[j];
-				
-			}
-			
-		}
-		
-		// MOVE THIS TO TestCase.casesToY
-		double[][] casesY = new double[cases.length][layerSizes[layerSizes.length - 1]];
-		for (int i = 0 ; i < cases.length ; i++)
-			casesY[i][cases[i].getExpectedOutput()] = 1;
-		
 	}
 	
 	/**
@@ -481,6 +462,8 @@ public abstract class Brain {
 		
 		int length = maxIterations;
 		
+		SimpleMatrix weights = unroll(thetas);
+		
 		int count = 0; // Run length counter
 		boolean lsFailed = false; // Whether a previous line search has failed
 		// Left out: declaration of fX, as don't need this to-be-returned value currently
@@ -493,7 +476,7 @@ public abstract class Brain {
 		double z1 = red / (1 - slope1); // Initial step
 		
 		double cost0;
-		SimpleMatrix x0;
+		SimpleMatrix weights0;
 		SimpleMatrix gradientsUnrolled0;
 		double cost2;
 		SimpleMatrix gradientsUnrolled2;
@@ -515,11 +498,11 @@ public abstract class Brain {
 			
 			// Copy current vals
 			cost0 = cost1;
-			x0 = x;
+			weights0 = weights;
 			gradientsUnrolled0 = gradientsUnrolled1;
 			
 			// Begin line search
-			x = x.plus(s.scale(z1));
+			weights = weights.plus(s.scale(z1));
 			
 			cost2 = costFunction(thetas , x , y , layerSizes , lambda);
 			gradientsUnrolled2 = unroll(gradients);
@@ -567,7 +550,7 @@ public abstract class Brain {
 					z1 += z2; // Update step
 					
 					// Continue line search
-					x = x.plus(s.scale(z2));
+					weights = weights.plus(s.scale(z2));
 					
 					cost2 = costFunction(thetas , x , y , layerSizes , lambda);
 					gradientsUnrolled2 = unroll(gradients);
@@ -624,7 +607,7 @@ public abstract class Brain {
 				z3 = -z2;
 				
 				z1 = z1 + z2; // Update current estimates
-				x = x.plus(s.scale(z2));
+				weights = weights.plus(s.scale(z2));
 				
 				cost2 = costFunction(thetas , x , y , layerSizes , lambda);
 				gradientsUnrolled2 = unroll(gradients);
@@ -666,7 +649,7 @@ public abstract class Brain {
 				
 			} else { // Failure
 				
-				x = x0; // Set point 1 <- before failed line search
+				weights = weights0; // Set point 1 <- before failed line search
 				cost1 = cost0;
 				gradientsUnrolled1 = gradientsUnrolled0;
 				
@@ -688,6 +671,8 @@ public abstract class Brain {
 			}
 			
 		}
+		
+		return roll(weights);
 		
 	} // END fmincg
 	

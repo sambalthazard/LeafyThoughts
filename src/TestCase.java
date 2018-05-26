@@ -51,4 +51,36 @@ public class TestCase {
 		
 	}
 	
+	
+	public static double[][] casesToX(TestCase[] cases) {
+		
+		int inputLength = cases[0].getInput().length;
+		double[][] casesX = new double[cases.length][inputLength + 1];
+		for (int i = 0 ; i < cases.length ; i++) {
+			
+			casesX[i][0] = 1; // bias column
+			
+			for (int j = 0 ; j < inputLength ; j++) {
+				
+				casesX[i][j + 1] = cases[i].getInput()[j];
+				
+			}
+			
+		}
+		
+		return casesX;
+		
+	}
+	
+	public static double[][] casesToY(TestCase[] cases) {
+		
+		int outputLength = allOutputs.size();
+		double[][] casesY = new double[cases.length][outputLength];
+		for (int i = 0 ; i < cases.length ; i++)
+			casesY[i][cases[i].getExpectedOutput()] = 1;
+		
+		return casesY;
+		
+	}
+	
 }
