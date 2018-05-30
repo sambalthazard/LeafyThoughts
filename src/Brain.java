@@ -6,6 +6,7 @@ import java.util.Arrays;
 import java.util.Random;
 
 import org.ejml.simple.SimpleMatrix;
+import org.ejml.data.*;
 
 public abstract class Brain {
 	
@@ -118,6 +119,9 @@ public abstract class Brain {
 		SimpleMatrix[] a = new SimpleMatrix[layerSizes.length];
 		a[0] = new SimpleMatrix(x);
 		
+		// Initialize z
+		z = new SimpleMatrix[thetas.length];
+		
 		// Feedforward through the layers:
 		a = feedForward(thetas , a);
 		
@@ -148,11 +152,8 @@ public abstract class Brain {
 		for (int i = 0 ; i < thetas.length ; i++) {
 			
 			// Feedforward one layer
-
-			System.out.println("Thetas: " + thetas.length + ": " + thetas[i].numCols() + "," + thetas[i].numRows() + "; "
-					 + a[i].numCols() + "," + a[i].numRows());
-			z[i + 1] = a[i].mult(thetas[i].transpose());
-			a[i + 1] = sigmoid(z[i + 1]);
+			z[i] = a[i].mult(thetas[i].transpose());
+			a[i + 1] = sigmoid(z[i]);
 			
 			// If not the last feedforward step, then append a bias column of 1s
 			if (i + 1 < thetas.length) {
@@ -164,7 +165,7 @@ public abstract class Brain {
 				//	(0 , 0)		(1 , 0)		(1  , ai0, .. , aij)
 				a[i + 1] = (new SimpleMatrix(a[i + 1].numRows() , 2))
 						.combine(0 , 0 , new SimpleMatrix(a[i + 1].numRows() , 1).plus(1))
-						.combine(0 , 1 , a[i]);
+						.combine(0 , 1 , a[i + 1]);
 				
 			}
 			
@@ -243,9 +244,9 @@ public abstract class Brain {
 		// Calculate little d's
 		for (int i = numThetas - 1 ; i > 0 ; i--) {
 			
-			SimpleMatrix sigGrad = sigmoidGradient(z[i]);
+			SimpleMatrix sigGrad = sigmoidGradient(z[i - 1]);
 			ds[i - 1] = thetas[i].transpose().mult(ds[i]);
-			ds[i - 1] = ds[i - 1].extractMatrix(1 , SimpleMatrix.END , 0 , SimpleMatrix.END).elementMult(sigGrad);
+			ds[i - 1] = ds[i - 1].extractMatrix(1 , SimpleMatrix.END , 0 , SimpleMatrix.END).elementMult(sigGrad.transpose());
 			
 		}
 		
@@ -288,12 +289,28 @@ public abstract class Brain {
 	 */
 	private static SimpleMatrix unroll(SimpleMatrix[] mxs) {
 		
-		SimpleMatrix result = new SimpleMatrix(0 , 1);
+		// TESTED: Conversion to double -> processing -> reconversion to SimpleMatrix takes ~0.36 as long as SimpleMatrix's reshape method
+		int unrolledLength = 0;
+		
+		// Determine total elements in matrices
+		for (SimpleMatrix mx : mxs)
+			unrolledLength += mx.numCols() * mx.numRows();
+		
+		// Create 2D array for unrolled matrix storage; will only use 1D, but need 2D to convert back to SimpleMatrix
+		double[][] doubleResult = new double[1][unrolledLength];
+		
+		// Unroll each matrix and append it to doubleResult array
+		int index = 0;
 		for (SimpleMatrix mx : mxs) {
 			
-			result = result.combine(SimpleMatrix.END , 1 , unroll(mx));
+			double[] mxArray = unrollToDouble(mx);
+			System.arraycopy(mxArray , 0 , doubleResult[0] , index , mxArray.length); // Copy in 
+			index += mxArray.length;
 			
 		}
+		
+		// Reconvert double array to SimpleMatrix, transpose it so its dimensions are (length x 1)
+		SimpleMatrix result = (new SimpleMatrix(doubleResult)).transpose();
 		
 		return result;
 		
@@ -306,9 +323,22 @@ public abstract class Brain {
 	 */
 	private static SimpleMatrix unroll(SimpleMatrix mx) {
 		
-	    SimpleMatrix newMx = mx.copy();
-	    newMx.reshape(1, mx.getNumElements());
-	    return mx;
+		int unrolledLength = mx.numCols() * mx.numRows();
+	    double[][] doubleResult = new double[1][unrolledLength];
+	    doubleResult[0] = unrollToDouble(mx);
+	    return (new SimpleMatrix(doubleResult)).transpose();
+		
+	}
+	
+	/**
+	 * 
+	 * @param mx
+	 * @return
+	 */
+	private static double[] unrollToDouble(SimpleMatrix mx) {
+		
+		DMatrixD1 d1Mx = mx.getMatrix();
+		return d1Mx.data;
 		
 	}
 	
@@ -710,7 +740,7 @@ public abstract class Brain {
 		}
 		
 		// Set dimensions for reshape
-		int[] dimensions = new int[thetas.length];
+		int[] dimensions = new int[thetas.length * 2];
 		for (int i = 0 ; i < thetas.length ; i++) {
 			
 			dimensions[i * 2] = thetas[i].numCols();

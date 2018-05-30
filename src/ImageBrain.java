@@ -1,3 +1,5 @@
+import java.awt.Graphics2D;
+import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
@@ -96,7 +98,6 @@ public class ImageBrain extends Brain {
 			String label = super.dataFileLines[x].substring(split + 1);
 			
 			// Read in pixel data
-			double[] pixelsunrolled = new double[imageSize];
 			BufferedImage image = null;
 			try {
 				
@@ -111,23 +112,27 @@ public class ImageBrain extends Brain {
 				continue;
 				
 			}
+			
+			// RESIZE so not cripplingly large
+			image = ImageProcessor.resize(image , width , height , Image.SCALE_SMOOTH);
+			
 			int[] argb = image.getRGB(0 , 0 , image.getWidth() , image.getHeight() , null , 0 , image.getWidth());
 			
-			// MUST ASSUME pixel data is in correct orientation, dimensions
+			// MUST ASSUME pixel data is in correct orientation, dimensions <--- IMPROVE THIS
 			// Extract r,g,b components from TYPE_INT_ARGB:
 			// First, convert int into its four component bytes
 			byte[][] rgbBytes = new byte[argb.length][4];
 			for (int i = 0 ; i < argb.length ; i++)
 				rgbBytes[i]= ByteBuffer.allocate(4).putInt(argb[i]).array();
 			
-			// Now, convert these bytes to ints and unwrap into 1D: reds then greens then blues
-			rgb = new int[rgbBytes.length][3];
-			unrolledRgb = new int[3 * rgb.length];
+			// Now, convert these bytes to ints and unroll into 1D array: reds then greens then blues
+			rgb = new int[3][rgbBytes.length];
+			unrolledRgb = new int[3 * rgb[0].length];
 			for (int i = 0 ; i < rgbBytes.length ; i++) {
 				
-				unrolledRgb[i] = rgb[i][0] = rgbBytes[i][1] & 0xFF;
-				unrolledRgb[rgb.length + i] = rgb[i][1] = rgbBytes[i][2] & 0xFF;
-				unrolledRgb[2 * rgb.length + i] = rgb[i][2] = rgbBytes[i][3] & 0xFF;
+				unrolledRgb[i] = rgb[0][i] = rgbBytes[i][1] & 0xFF;
+				unrolledRgb[rgb[0].length + i] = rgb[1][i] = rgbBytes[i][2] & 0xFF;
+				unrolledRgb[2 * rgb[0].length + i] = rgb[2][i] = rgbBytes[i][3] & 0xFF;
 				
 			}
 			
@@ -142,8 +147,8 @@ public class ImageBrain extends Brain {
 			// Ideas:
 			// - edge detect then scale all images to same horizontal scale? Make processed dimensions square to accommodate out of bounds?
 			
-			// Put it all into a TestCase object and add it to the brain's list
-			super.cases[x - PRE_DATA_LINES] = new TestCase(pixelsunrolled , label , imageName);
+			// Convert to double array, put it all into a TestCase object and add it to the brain's list
+			super.cases[x - PRE_DATA_LINES] = new TestCase(Arrays.stream(unrolledRgb).asDoubleStream().toArray() , label , imageName);
 			
 		}
 		
@@ -160,6 +165,19 @@ public class ImageBrain extends Brain {
 			// Edge detection using internal & external gradient
 			
 			return unrolledRgb;
+			
+		}
+		
+		public static BufferedImage resize(BufferedImage image , int newWidth , int newHeight , int SCALE) {
+			
+			Image scaledImage = image.getScaledInstance(newWidth, newHeight, SCALE);
+			BufferedImage bScaledImage = new BufferedImage(newWidth , newHeight , BufferedImage.TYPE_INT_ARGB);
+			
+			Graphics2D g = bScaledImage.createGraphics();
+			g.drawImage(scaledImage , 0 , 0 , null);
+			g.dispose();
+			
+			return bScaledImage;
 			
 		}
 		
