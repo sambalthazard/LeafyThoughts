@@ -99,6 +99,45 @@ public abstract class Brain {
 		// Train from training cases
 		thetas = fmincg(thetas , trainingMxX , trainingMxY , layerSizes , lambda , MAX_TRAINING_ITERATIONS , RED);
 		
+		// **** USE VALIDATION SET **** //
+		
+	}
+	
+	/**
+	 * Tests the accuracy of the trained NN by feeding forward the test set through the NN.
+	 */
+	public void test() {
+		
+		// Set test case inputs as matrix of inputs with a bias column of 1s
+		double[][] testX = TestCase.casesToX(testCases);
+		
+		// Recode known test answers as an array of vectors with 1 at the index of the y value, 0 at all other indices
+		// double[][] testY = TestCase.casesToY(testCases);
+		
+		// Convert into SimpleMatrix objects for efficient matrix computation
+		SimpleMatrix testMxX = new SimpleMatrix(testX);
+		
+		// Feed forward to find NN's predicted outputs
+		SimpleMatrix output = feedForwardSimple(thetas , testMxX); // Transpose to make it 3x12
+		int[] dimensions = {output.numRows() , output.numCols()};
+		double[][] outputDouble = reshapeToDouble(output , dimensions , false)[0];
+		
+		// Compare with expected outputs
+		int match = 0;
+		int total = 0;
+		for (int i = 0 ; i < testCases.length ; i++) {
+			
+			if (getIndexOfMax(outputDouble[i]) == testCases[i].getExpectedOutput())
+				match++;
+			
+			total++;
+			
+		}
+		
+		double accuracy = ((double) match) / ((double) total);
+		
+		System.out.println(accuracy);
+		
 	}
 	
 	/**
@@ -142,7 +181,7 @@ public abstract class Brain {
 	}
 	
 	/**
-	 * Feeds forward an input through NN layers to produce NN's answers.
+	 * Feeds forward an input through NN layers to produce NN's answers and all intermediary values.
 	 * @param thetas The weights for each forward feed through NN layers.
 	 * @param a In index 0, the matrix to feed forward through the NN.
 	 * @return The calculated answers for each case (% probability in each index) in each layer. 
@@ -166,6 +205,34 @@ public abstract class Brain {
 				a[i + 1] = (new SimpleMatrix(a[i + 1].numRows() , 2))
 						.combine(0 , 0 , new SimpleMatrix(a[i + 1].numRows() , 1).plus(1))
 						.combine(0 , 1 , a[i + 1]);
+				
+			}
+			
+		}
+		
+		return a;
+		
+	}
+	
+	/**
+	 * Feeds forward an input through NN layers to produce NN's answers.
+	 * @param thetas The weights for each forward feed through NN layers.
+	 * @param a In index 0, the matrix to feed forward through the NN.
+	 * @return The calculated answers for each case (% probability in each index) in JUST the output layer. 
+	 */
+	private static SimpleMatrix feedForwardSimple(SimpleMatrix[] thetas , SimpleMatrix a) {
+		
+		for (int i = 0 ; i < thetas.length ; i++) {
+			
+			// Feedforward one layer (no assignment to z)
+			a = sigmoid(a.mult(thetas[i].transpose()));
+			
+			// If not the last feedforward step, then append a bias column of 1s
+			if (i + 1 < thetas.length) {
+				
+				a = (new SimpleMatrix(a.numRows() , 2))
+						.combine(0 , 0 , new SimpleMatrix(a.numRows() , 1).plus(1))
+						.combine(0 , 1 , a);
 				
 			}
 			
@@ -347,22 +414,152 @@ public abstract class Brain {
 	 * @param mx
 	 * @return
 	 */
-	private static SimpleMatrix[] reshape(SimpleMatrix mx , int[] dimensions) {
+	private static SimpleMatrix[] reshape(SimpleMatrix mx , int[] dimensions , boolean vertical) {
 		
 		SimpleMatrix[] reshaped = new SimpleMatrix[dimensions.length / 2];
 		
-		int lastEnd = 0;
+		// Unroll matrix to "raw" double array for fast double[] processing
+		double[] raw = unrollToDouble(mx);
+		
+		int start = 0;
 		for (int i = 0 ; i < reshaped.length ; i++) {
 			
-			int start = lastEnd;
-			int end = start + dimensions[i * 2] + dimensions[i * 2 + 1];
-			lastEnd = end;
+			int cols = dimensions[i * 2];
+			int rows = dimensions[i * 2 + 1];
 			
-			reshaped[i] = mx.extractMatrix(start , end , 0 , SimpleMatrix.END);
+			// If unrolling horizontally, switch cols and rows for horizontal processing
+			if (!vertical) {
+				
+				int temp = cols;
+				cols = rows;
+				rows = temp;
+				
+			}
+			
+			double[][] reshapedDouble = new double[cols][rows];
+			for (int j = 0 ; j < cols ; j++) {
+				
+				// Copy one column from raw->reshapedDouble[i]
+				System.arraycopy(raw , start , reshapedDouble[j] , 0 , rows);
+				
+				// Update start
+				start += rows;
+				
+			}
+			
+			// Build a SimpleMatrix from reshaped double[][]
+			reshaped[i] = new SimpleMatrix(reshapedDouble).transpose();
+			
+		}
+		
+		// If unrolling horizontally, transpose back to the right dimensions before return
+		if (!vertical) {
+			
+			for (int i = 0 ; i < reshaped.length ; i++)
+				reshaped[i] = reshaped[i].transpose();
 			
 		}
 		
 		return reshaped;
+		
+	}
+	
+	/**
+	 * 
+	 * @param mx
+	 * @return
+	 */
+	private static double[][][] reshapeToDouble(SimpleMatrix mx , int[] dimensions , boolean vertical) {
+		
+		double[][][] reshaped = new double[dimensions.length / 2][][];
+		
+		// Unroll matrix to "raw" double array
+		double[] raw = unrollToDouble(mx);
+		
+		int start = 0;
+		for (int i = 0 ; i < reshaped.length ; i++) {
+			
+			int cols = dimensions[i * 2];
+			int rows = dimensions[i * 2 + 1];
+			
+			// If unrolling horizontally, switch cols and rows for processing
+			if (!vertical) {
+				
+				int temp = cols;
+				cols = rows;
+				rows = temp;
+				
+			} // RETHINK: has to do more than this
+			
+			reshaped[i] = new double[cols][rows];
+			for (int j = 0 ; j < cols ; j++) {
+				
+				// Copy one column from raw->reshapedDouble[i]
+				System.arraycopy(raw , start , reshaped[i][j] , 0 , rows);
+				
+				// Update start
+				start += rows;
+				
+			}
+			
+		}
+		// If unrolling horizontally, transpose back to the right dimensions before return
+		if (!vertical) {
+			
+			// Save pre-transposed matrices
+			double[][][] temp = reshaped;
+			// Overwrite output matrices so they can be reshaped to transposed dimensions
+			reshaped = new double[reshaped.length][][];
+			
+			// For each matrix
+			for (int i = 0 ; i < reshaped.length ; i++) {
+				
+				// Create empty matrix w/ transposed dimensions
+				double[][] current = new double[temp[i][0].length][temp[i].length];
+				
+				for (int j = 0 ; j < temp[i][0].length ; j++) {
+					
+					for (int k = 0 ; k < temp[i].length ; k++) {
+						
+						// Copy element from pre-transposed matrix into its transposed position
+						current[j][k] = temp[i][k][j];
+						
+					}
+					
+				}
+				
+				reshaped[i] = current;
+				
+			}
+			
+		}
+				
+		return reshaped;
+		
+	}
+	
+	/**
+	 * 
+	 * @param array
+	 * @return
+	 */
+	public static int getIndexOfMax(double[] array) {
+		
+		int index = 0;
+		double max = array[0];
+		
+		for (int i = 1 ; i < array.length ; i++) {
+			
+			if (array[i] > max) {
+				
+				index = i;
+				max = array[i];
+				
+			}
+			
+		}
+		
+		return index;
 		
 	}
 	
@@ -748,7 +945,7 @@ public abstract class Brain {
 			
 		}
 		
-		return reshape(weights , dimensions);
+		return reshape(weights , dimensions , true);
 		
 	} // END fmincg
 	
