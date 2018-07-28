@@ -17,6 +17,9 @@ public abstract class Brain {
 	protected TestCase[] trainingCases;
 	protected TestCase[] validationCases;
 	protected TestCase[] testCases;
+	private double trainingSplit; // The ratio of input cases for the training set
+	private double validationSplit; // "" validation set
+	private double testSplit; // "" test set
 	protected String[] labels; // All the possible output values of the brain
 	private SimpleMatrix[] thetas;
 	private Random rand; // Random number generator
@@ -26,9 +29,6 @@ public abstract class Brain {
 	private static SimpleMatrix[] z; // Most recent z values calculated by feedForward; z[i] = a[i] before sigmoid
 
 	public static final double XAVIER_NORMALIZED_INIT = Math.sqrt(6);
-	public static final double TRAINING_SPLIT = 0.5;
-	public static final double VALIDATION_SPLIT = 0.25;
-	public static final double TEST_SPLIT = 1 - (TRAINING_SPLIT + VALIDATION_SPLIT);
 	
 	// fmingc constants:
 	public static final int MAX_TRAINING_ITERATIONS = 50;
@@ -43,9 +43,12 @@ public abstract class Brain {
 	/**
 	 * Initializes the brain.
 	 * @param layerSizes The number of nodes in each layer of the network. Index 0 is the input layer, and the last index is the output layer.
+	 * @param trainingRatio 
+	 * @param validationRatio 
+	 * @param testRatio 
 	 * @throws BrainException
 	 */
-	public Brain(int[] layerSizes) throws BrainException {
+	public Brain(int[] layerSizes , double trainingRatio , double validationRatio , double testRatio) throws BrainException {
 		
 		if (layerSizes.length >= 2) {
 			
@@ -59,6 +62,14 @@ public abstract class Brain {
 			rand = new Random();
 			thetas = randInitializeNNWeights();
 			lambda = 1;
+			
+			// Initialize training/validation/test sets and ratios
+			trainingCases = new TestCase[0];
+			validationCases = new TestCase[0];
+			testCases = new TestCase[0];
+			trainingSplit = trainingRatio;
+			validationSplit = validationRatio;
+			testSplit = testRatio;
 			
 		} else {
 			
@@ -82,6 +93,9 @@ public abstract class Brain {
 		
 		splitCases(); // Split cases into training, validation, and test sets
 		
+		if (trainingCases.length < 1)
+			throw new BrainException("Can't train the brain with 0 training cases! Try increasing the trainingRatio.");
+		
 		// Set case inputs as matrix of inputs with a bias column of 1s
 		double[][] trainingX = TestCase.casesToX(trainingCases);
 		double[][] validationX = TestCase.casesToX(validationCases);
@@ -93,8 +107,8 @@ public abstract class Brain {
 		// Convert into SimpleMatrix objects for efficient matrix computation
 		SimpleMatrix trainingMxX = new SimpleMatrix(trainingX);
 		SimpleMatrix trainingMxY = new SimpleMatrix(trainingY);
-		SimpleMatrix validationMxX = new SimpleMatrix(validationX); // STILL NEED TO USE THESE TO TELL FMINCG WHEN TO STOP
-		SimpleMatrix validationMxY = new SimpleMatrix(validationY);
+		/*SimpleMatrix validationMxX = new SimpleMatrix(validationX); // STILL NEED TO USE THESE TO TELL FMINCG WHEN TO STOP
+		SimpleMatrix validationMxY = new SimpleMatrix(validationY);*/
 		
 		// Train from training cases
 		thetas = fmincg(thetas , trainingMxX , trainingMxY , layerSizes , lambda , MAX_TRAINING_ITERATIONS , RED);
@@ -105,8 +119,12 @@ public abstract class Brain {
 	
 	/**
 	 * Tests the accuracy of the trained NN by feeding forward the test set through the NN.
+	 * @throws BrainException 
 	 */
-	public void test() {
+	public void test() throws BrainException {
+		
+		if (testCases.length < 1)
+			throw new BrainException("Can't test the brain with 0 test cases! Try increasing the testRatio.");
 		
 		// Set test case inputs as matrix of inputs with a bias column of 1s
 		double[][] testX = TestCase.casesToX(testCases);
@@ -192,6 +210,7 @@ public abstract class Brain {
 			
 			// Feedforward one layer
 			z[i] = a[i].mult(thetas[i].transpose());
+			SimpleMatrix zcopy = z[i];
 			a[i + 1] = sigmoid(z[i]);
 			
 			// If not the last feedforward step, then append a bias column of 1s
@@ -540,6 +559,24 @@ public abstract class Brain {
 	
 	/**
 	 * 
+	 * @param toScale
+	 * @return
+	 * @throws BrainException
+	 */
+	public static double[] featureScale(double[] toScale) throws BrainException {
+		
+		double mean = getMean(toScale);
+		double stdev = getStDev(toScale);
+		
+		for (int i = 0 ; i < toScale.length ; i++)
+			toScale[i] = (toScale[i] - mean) / stdev;
+		
+		return toScale;
+		
+	}
+	
+	/**
+	 * 
 	 * @param array
 	 * @return
 	 */
@@ -564,6 +601,51 @@ public abstract class Brain {
 	}
 	
 	/**
+	 * 
+	 * @param array
+	 * @return
+	 * @throws BrainException
+	 */
+	public static double getMean(double[] array) throws BrainException {
+		
+		double n = array.length;
+		
+		if (n <= 0)
+			throw new BrainException("Array contents empty, no standard deviation.");
+		
+		double total = 0;
+		for (int i = 0 ; i < array.length ; i++)
+			total += array[i];
+		
+		return total / n;
+		
+	}
+	
+	/**
+	 * Calculates the standard deviation of a matrix of doubles.
+	 * @param matrix Matrix of doubles to calculate standard deviation of.
+	 * @return
+	 * @throws BrainException 
+	 * @precondition matrix rows all same length, and columns all same length.
+	 */
+	public static double getStDev(double[] array) throws BrainException {
+
+        double n = array.length;
+        
+		if (n <= 0)
+			throw new BrainException("Array contents empty, no standard deviation.");
+		
+		double mean = getMean(array);
+        double total = 0;
+
+        for (int i = 0 ; i < array.length ; i++ )
+                total += Math.pow((array[i] - mean) , 2);
+        
+        return Math.sqrt(total / (n - 1.0));
+		
+	}
+	
+	/**
 	 * Calculates the sigmoid equation for each element in a SimpleMatrix and returns the result.
 	 * @param mx The matrix to apply the sigmoid equation to each element.
 	 * @return The input matrix with sigmoid equation applied to each element
@@ -571,7 +653,11 @@ public abstract class Brain {
 	public static SimpleMatrix sigmoid(SimpleMatrix mx) {
 		
 		// Equivalent to 1 / (1 + e^(mx)) for each element in mx
-		return mx.scale(-1).elementExp().plus(1).elementPower(-1);
+		SimpleMatrix one = mx.scale(-1);
+		SimpleMatrix two = one.elementExp();
+		SimpleMatrix three = two.plus(1);
+		SimpleMatrix four = three.elementPower(-1.0);
+		return mx.scale(-1).elementExp().plus(1).elementPower(-1.0);
 		
 	}
 	
@@ -646,21 +732,52 @@ public abstract class Brain {
 	}
 	
 	/**
-	 * Splits all the cases provided into training set, validation set, and test set with const ratios provided above
+	 * Randomly splits all the cases provided into training set, validation set, and test set with instance variable ratios
 	 * @throws BrainException 
 	 */
 	protected void splitCases() throws BrainException {
 		
+		// First, determine the start and end points of the cases set for each subset
 		int numCases = cases.length;
-		int trainingSplit = (int) (numCases * TRAINING_SPLIT);
-		int validationSplit = (int) (trainingSplit + numCases * VALIDATION_SPLIT);
+		int trainingEnd = (int) (numCases * trainingSplit);
+		int validationEnd = (int) (trainingEnd + numCases * validationSplit);
 		
-		if (trainingSplit == 0 || validationSplit == trainingSplit || cases.length == validationSplit)
-			throw new BrainException("Not enough cases supplied to split into training/validation/test sets all of size > 0 according to designated allocation ratios.");
+		// Before allocating the cases to the subsets, shuffle the cases:
+		shuffleArray(cases);
 		
-		trainingCases = Arrays.copyOfRange(cases , 0 , trainingSplit);
-		validationCases = Arrays.copyOfRange(cases , trainingSplit , validationSplit);
-		testCases = Arrays.copyOfRange(cases , validationSplit , cases.length);
+		// Then, allocate the appropriate number of cases to each subset:
+		if (trainingEnd > 0)
+			trainingCases = Arrays.copyOfRange(cases , 0 , trainingEnd);
+		
+		if (validationEnd > trainingEnd)
+			validationCases = Arrays.copyOfRange(cases , trainingEnd , validationEnd);
+		
+		if (cases.length > validationEnd)
+			testCases = Arrays.copyOfRange(cases , validationEnd , cases.length);
+		
+	}
+	
+	/**
+	 * Shuffles an array of any type using the Fisher-Yates algorithm.
+	 * @param array
+	 * @return
+	 */
+	public static <T> T[] shuffleArray(T[] array) {
+		
+		Random r = new Random();
+		
+		for (int i = array.length - 1 ; i > 0 ; i--) {
+			
+			int index = r.nextInt(i + 1);
+			
+			// Swap
+			T temp = array[index];
+			array[index] = array[i];
+			array[i] = temp;
+			
+		}
+		
+		return array;
 		
 	}
 	
@@ -693,12 +810,16 @@ public abstract class Brain {
 		
 		double epsilon = XAVIER_NORMALIZED_INIT / Math.sqrt(in + out);
 		
+		double val = 0; // TEMP, FOR BUGFIXING
+		
 		// Fill in each member of result with a random initialization
 		for (int row = 0 ; row < result.length ; row++) {
 			
 			for (int column = 0 ; column < result[row].length ; column++) {
 				
-				result[row][column] = rand.nextDouble() * 2.0 * epsilon - epsilon;
+				//result[row][column] = rand.nextDouble() * 2.0 * epsilon - epsilon;
+				result[row][column] = (val - (int) val) * 2.0 * epsilon - epsilon; // TEMP, FOR BUGFIXING
+				val+= .1; // TEMP, FOR BUGFIXING
 				
 			}
 			
@@ -727,11 +848,19 @@ public abstract class Brain {
 		int length = maxIterations;
 		
 		SimpleMatrix weights = unroll(thetas);
+		// Set dimensions for reshape
+		int[] dimensions = new int[thetas.length * 2];
+		for (int i =  0 ; i < thetas.length ; i++) {
+		
+			dimensions[i * 2] = thetas[i].numCols();
+			dimensions[i * 2 + 1] = thetas[i].numRows();
+				
+		}
 		
 		int count = 0; // Run length counter
 		boolean lsFailed = false; // Whether a previous line search has failed
 		// Left out: declaration of fX, as don't need this to-be-returned value currently
-		double cost1 = costFunction(thetas , x , y , layerSizes , lambda);
+		double cost1 = costFunction(reshape(weights , dimensions , false) , x , y , layerSizes , lambda);
 		// Implied: static gradients = gradients calculated by that cost function execution
 		SimpleMatrix gradientsUnrolled1 = unroll(gradients); // Unroll gradients for easier processing
 		count += (length < 0 ? 1 : 0);
@@ -755,7 +884,7 @@ public abstract class Brain {
 		double a;
 		double b;
 		
-		while (count < Math.abs(length)) {
+		while (count < Math.abs(length)) { // *****TEST WITH ALL WEIGHTS INIT AT 0 BOTH HERE AND MATLAB, compare step by step*****
 			
 			// Iter
 			count += (length > 0 ? 1 : 0);
@@ -768,7 +897,7 @@ public abstract class Brain {
 			// Begin line search
 			weights = weights.plus(s.scale(z1));
 			
-			cost2 = costFunction(thetas , x , y , layerSizes , lambda);
+			cost2 = costFunction(reshape(weights , dimensions , false) , x , y , layerSizes , lambda);
 			gradientsUnrolled2 = unroll(gradients);
 			
 			count += (length < 0 ? 1 : 0);
@@ -778,7 +907,7 @@ public abstract class Brain {
 			// Init point 3 equal to point 1
 			cost3 = cost1;
 			slope3 = slope1;
-			z3 = z1 * -1;
+			z3 = z1 * -1.0;
 			
 			if (length > 0)
 				M = MAX;
@@ -801,8 +930,8 @@ public abstract class Brain {
 					}
 					else { // Cubic fit:
 						
-						a = 6 * (cost2 - cost3) / z3 + 3 * (slope2 + slope3);
-						b = 3 * (cost3 - cost2) - z3 * (slope3 + 2 * slope2);
+						a = 6.0 * (cost2 - cost3) / z3 + 3 * (slope2 + slope3);
+						b = 3.0 * (cost3 - cost2) - z3 * (slope3 + 2 * slope2);
 						if (a != 0)
 							z2 = (Math.sqrt(b * b - a * slope2 * z3 * z3) - b) / a;
 						else // In case of divide by 0
@@ -810,16 +939,16 @@ public abstract class Brain {
 						
 					}
 					
-					z2 = Math.max(Math.min(z2 , INT * z3) , (1 - INT) * z3); // Don't accept too close to limits
+					z2 = Math.max(Math.min(z2 , INT * z3) , (1.0 - INT) * z3); // Don't accept too close to limits
 					z1 += z2; // Update step
 					
 					// Continue line search
 					weights = weights.plus(s.scale(z2));
 					
-					cost2 = costFunction(thetas , x , y , layerSizes , lambda);
+					cost2 = costFunction(reshape(weights , dimensions , false) , x , y , layerSizes , lambda);
 					gradientsUnrolled2 = unroll(gradients);
 					
-					M -= 1;
+					M -= 1.0;
 					count += (length < 0 ? 1 : 0);
 					
 					slope2 = gradientsUnrolled2.transpose().mult(s).get(0 , 0);
@@ -827,7 +956,7 @@ public abstract class Brain {
 					
 				}
 				
-				if (cost2 > cost1 + z1 * RHO * slope1 || slope2 > -1 * SIG * slope1) // Failure
+				if (cost2 > cost1 + z1 * RHO * slope1 || slope2 > -1.0 * SIG * slope1) // Failure
 					break;
 				else if (slope2 > SIG * slope1) { // Success
 					
@@ -839,30 +968,30 @@ public abstract class Brain {
 					break;
 				
 				// Cubic extrapolation
-				a = 6 * (cost2 - cost3) / z3 + 3 * (slope2 + slope3);
-				b = 3 * (cost3 - cost2) - z3 * (slope3 + 2 * slope2);
+				a = 6.0 * (cost2 - cost3) / z3 + 3 * (slope2 + slope3);
+				b = 3.0 * (cost3 - cost2) - z3 * (slope3 + 2 * slope2);
 				
 				double sqrtEval = b * b - a * slope2 * z3 * z3;
 				double denom; // Only evaluate once decided sqrt will be real
 				if (sqrtEval < 0 || (denom = b + Math.sqrt(sqrtEval)) == 0) { // If sqrt imaginary or div by 0
 					
 					if (limit < -0.5) // If no upper limit
-						z2 = z1 * (EXT - 1); // Extrapolate max amount
+						z2 = z1 * (EXT - 1.0); // Extrapolate max amount
 					else
-						z2 = (limit - z1) / 2; // Otherwise bisect
+						z2 = (limit - z1) / 2.0; // Otherwise bisect
 					
 				} else {
 					
-					z2 = -1 * slope2 * z3 * z3 / denom; // Intended calculation, no errors
+					z2 = -1.0 * slope2 * z3 * z3 / denom; // Intended calculation, no errors
 					
 					if (limit > -0.5 && z2 + z1 > limit) // If extrapolation beyond max
-						z2 = (limit - z1) / 2; // Then bisect
+						z2 = (limit - z1) / 2.0; // Then bisect
 					else if (limit < -0.5 && z2 + z1 > z1 * EXT) // If extrapolation beyond limit
-						z2 = z1 * (EXT - 1); // Set to extrapolation limit
-					else if (z2 < -1 * z3 * INT)
-						z2 = -1 * z3 * INT;
-					else if (limit > -0.5 && z2 < (limit - z1) * (1 - INT)) // If too close to limit
-						z2 = (limit - z1) * (1 - INT);
+						z2 = z1 * (EXT - 1.0); // Set to extrapolation limit
+					else if (z2 < -1.0 * z3 * INT)
+						z2 = -1.0 * z3 * INT;
+					else if (limit > -0.5 && z2 < (limit - z1) * (1.0 - INT)) // If too close to limit
+						z2 = (limit - z1) * (1.0 - INT);
 					
 				}
 				
@@ -873,7 +1002,7 @@ public abstract class Brain {
 				z1 = z1 + z2; // Update current estimates
 				weights = weights.plus(s.scale(z2));
 				
-				cost2 = costFunction(thetas , x , y , layerSizes , lambda);
+				cost2 = costFunction(reshape(weights , dimensions , false) , x , y , layerSizes , lambda);
 				gradientsUnrolled2 = unroll(gradients);
 				
 				M = M - 1;
@@ -886,6 +1015,7 @@ public abstract class Brain {
 			if (success) {
 				
 				cost1 = cost2;
+				System.out.println("Iter cost: " + cost1);
 				
 				// Polack-Ribiere direction:
 				s = s.scale(
@@ -928,7 +1058,7 @@ public abstract class Brain {
 				s = gradientsUnrolled1.scale(-1); // Try steepest direction
 				slope2 = s.transpose().scale(-1).mult(s).get(0 , 0);
 				
-				z1 = 1.0 / (1 - slope1);
+				z1 = 1.0 / (1.0 - slope1);
 				
 				lsFailed = true;
 				
@@ -936,16 +1066,7 @@ public abstract class Brain {
 			
 		}
 		
-		// Set dimensions for reshape
-		int[] dimensions = new int[thetas.length * 2];
-		for (int i = 0 ; i < thetas.length ; i++) {
-			
-			dimensions[i * 2] = thetas[i].numCols();
-			dimensions[i * 2 + 1] = thetas[i].numRows();
-			
-		}
-		
-		return reshape(weights , dimensions , true);
+		return reshape(weights , dimensions , false);
 		
 	} // END fmincg
 	
