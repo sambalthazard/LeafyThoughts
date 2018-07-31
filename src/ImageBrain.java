@@ -88,7 +88,7 @@ public class ImageBrain extends Brain {
 		// Read the image data file:
 		for (x = PRE_DATA_LINES ; x <= numImages ; x++) {
 			
-			System.out.println("Reading image " + (x - PRE_DATA_LINES) + " / " + numImages);
+			System.out.println("Reading image " + (x - PRE_DATA_LINES + 1) + " / " + numImages);
 			
 			int split = super.dataFileLines[x].indexOf(',');
 			

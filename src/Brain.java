@@ -273,7 +273,7 @@ public abstract class Brain {
 		int numLabels = y.numCols();
 		
 		// Compute cost: J = (1/m) * sum(1->m)sum(1->k) [ -yki log((hθ(xi))k) - (1 - yki) log(1 - (hθ(xi))k)]
-		int j = 0;
+		double j = 0;
 		for (int i = 0 ; i < numLabels ; i++) {
 		
 			SimpleMatrix minusYiVertical = y.extractVector(false , i).scale(-1);
@@ -300,10 +300,14 @@ public abstract class Brain {
 	 */
 	private static double regularizeCost(double jNonReg , SimpleMatrix[] thetas , int m , double lambda) {
 		
-		// Regularize: J = jNonReg + (lambda / 2m) * [each element of thetas ^2]
+		// Regularize: J = jNonReg + (lambda / 2m) * [each element of thetas (no bias column) ^2]
 		double thetasSquaredSum = 0;
-		for (SimpleMatrix mx : thetas)
-			thetasSquaredSum += mx.elementPower(2).elementSum();
+		for (SimpleMatrix mx : thetas) {
+			
+			SimpleMatrix unbiasedMx = mx.extractMatrix(0 , SimpleMatrix.END , 1 , SimpleMatrix.END);
+			thetasSquaredSum += unbiasedMx.elementPower(2).elementSum();
+			
+		}
 		double jReg = jNonReg + (lambda / (2.0 * m)) * thetasSquaredSum;
 		
 		return jReg;
@@ -358,9 +362,9 @@ public abstract class Brain {
 		
 		for (int i = 0 ; i < gradients.length ; i++) {
 			
-			SimpleMatrix biasColumn = gradients[i].extractVector(false , 0);
-			gradients[i] = gradients[i].scale(1.0 + (lambda / m)); // Regularization
-			gradients[i] = gradients[i].combine(0 , 0 , biasColumn); // Don't regularize the bias column
+			SimpleMatrix biasColumn = gradients[i].extractVector(false , 0); // Extract bias column so it's not regularized
+			gradients[i] = gradients[i].plus(thetas[i].scale((lambda / m))); // Regularization
+			gradients[i] = gradients[i].combine(0 , 0 , biasColumn); // Replace the bias column after the rest is regularized
 			
 		}
 		
@@ -423,7 +427,7 @@ public abstract class Brain {
 	 */
 	private static double[] unrollToDouble(SimpleMatrix mx) {
 		
-		DMatrixD1 d1Mx = mx.getMatrix();
+		DMatrixD1 d1Mx = mx.transpose().getMatrix(); // Transpose in order to unroll it by column first
 		return d1Mx.data;
 		
 	}
@@ -653,10 +657,6 @@ public abstract class Brain {
 	public static SimpleMatrix sigmoid(SimpleMatrix mx) {
 		
 		// Equivalent to 1 / (1 + e^(mx)) for each element in mx
-		SimpleMatrix one = mx.scale(-1);
-		SimpleMatrix two = one.elementExp();
-		SimpleMatrix three = two.plus(1);
-		SimpleMatrix four = three.elementPower(-1.0);
 		return mx.scale(-1).elementExp().plus(1).elementPower(-1.0);
 		
 	}
@@ -669,7 +669,7 @@ public abstract class Brain {
 	public static SimpleMatrix sigmoidGradient(SimpleMatrix mx) {
 		
 		SimpleMatrix sig = sigmoid(mx);
-		return sig.elementMult(sig.scale(-1).plus(1));
+		return sig.elementMult(sig.scale(-1.0).plus(1));
 		
 	}
 
@@ -743,7 +743,8 @@ public abstract class Brain {
 		int validationEnd = (int) (trainingEnd + numCases * validationSplit);
 		
 		// Before allocating the cases to the subsets, shuffle the cases:
-		shuffleArray(cases);
+		// PUT BACK: ***
+		//shuffleArray(cases);
 		
 		// Then, allocate the appropriate number of cases to each subset:
 		if (trainingEnd > 0)
@@ -860,7 +861,7 @@ public abstract class Brain {
 		int count = 0; // Run length counter
 		boolean lsFailed = false; // Whether a previous line search has failed
 		// Left out: declaration of fX, as don't need this to-be-returned value currently
-		double cost1 = costFunction(reshape(weights , dimensions , false) , x , y , layerSizes , lambda);
+		double cost1 = costFunction(reshape(weights , dimensions , true) , x , y , layerSizes , lambda);
 		// Implied: static gradients = gradients calculated by that cost function execution
 		SimpleMatrix gradientsUnrolled1 = unroll(gradients); // Unroll gradients for easier processing
 		count += (length < 0 ? 1 : 0);
