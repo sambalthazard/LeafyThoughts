@@ -1,11 +1,6 @@
 
 
 public class SimpleBrain extends Brain {
-	
-	private final int PRE_DATA_LINES = 1;
-	
-	private int[][] rgb; // Defined in loadData, NOT in constructor
-	private int[] unrolledRgb; // Defined in loadData, NOT in constructor
 
 	/**
 	 * 
