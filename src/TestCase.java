@@ -65,6 +65,9 @@ public class TestCase {
 	
 	public static double[][] casesToX(TestCase[] cases) {
 		
+		if (cases.length < 1)
+			return new double[0][0];
+		
 		int inputLength = cases[0].getInput().length;
 		double[][] casesX = new double[cases.length][inputLength + 1];
 		for (int i = 0 ; i < cases.length ; i++) {
@@ -84,6 +87,9 @@ public class TestCase {
 	}
 	
 	public static double[][] casesToY(TestCase[] cases) {
+		
+		if (cases.length < 1)
+			return new double[0][0];
 		
 		int outputLength = allOutputs.size();
 		double[][] casesY = new double[cases.length][outputLength];

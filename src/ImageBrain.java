@@ -18,11 +18,14 @@ public class ImageBrain extends Brain {
 	/**
 	 * 
 	 * @param layerSizes The number of nodes in each layer of the network. Index 0 is the input layer, and the last number is the output layer.
+	 * @param trainingRatio 
+	 * @param validationRatio 
+	 * @param testRatio 
 	 * @throws BrainException
 	 */
-	public ImageBrain(int[] layerSizes) throws BrainException {
+	public ImageBrain(int[] layerSizes , double trainingRatio , double validationRatio , double testRatio) throws BrainException {
 
-		super(layerSizes);
+		super(layerSizes , trainingRatio , validationRatio , testRatio);
 		
 	}
 	
@@ -85,7 +88,7 @@ public class ImageBrain extends Brain {
 		// Read the image data file:
 		for (x = PRE_DATA_LINES ; x <= numImages ; x++) {
 			
-			System.out.println("Reading image " + (x - PRE_DATA_LINES) + " / " + numImages);
+			System.out.println("Reading image " + (x - PRE_DATA_LINES + 1) + " / " + numImages);
 			
 			int split = super.dataFileLines[x].indexOf(',');
 			
@@ -147,8 +150,10 @@ public class ImageBrain extends Brain {
 			// Ideas:
 			// - edge detect then scale all images to same horizontal scale? Make processed dimensions square to accommodate out of bounds?
 			
-			// Convert to double array, put it all into a TestCase object and add it to the brain's list
-			super.cases[x - PRE_DATA_LINES] = new TestCase(Arrays.stream(unrolledRgb).asDoubleStream().toArray() , label , imageName);
+			// Convert to double array, feature scale, put it all into a TestCase object and add it to the brain's list
+			double[] processedImageDoubleArray = Arrays.stream(unrolledRgb).asDoubleStream().toArray();
+			double[] featureScaled = Brain.featureScale(processedImageDoubleArray);
+			super.cases[x - PRE_DATA_LINES] = new TestCase(featureScaled , label , imageName);
 			
 		}
 		
