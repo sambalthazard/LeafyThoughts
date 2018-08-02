@@ -8,7 +8,7 @@ import java.util.Random;
 import org.ejml.simple.SimpleMatrix;
 import org.ejml.data.*;
 
-public abstract class Brain {
+public abstract class Brain { // THINGS TO REPLACE AFTER BUGFIXING ARE IN: splitCases, randInitializeWeights
 	
 	private int numLabels;
 	private int[] layerSizes;
@@ -743,8 +743,8 @@ public abstract class Brain {
 		int validationEnd = (int) (trainingEnd + numCases * validationSplit);
 		
 		// Before allocating the cases to the subsets, shuffle the cases:
-		// PUT BACK: ***
-		//shuffleArray(cases);
+		// PUT BACK WHEN NOT BUGFIXING: ***
+		shuffleArray(cases);
 		
 		// Then, allocate the appropriate number of cases to each subset:
 		if (trainingEnd > 0)
@@ -818,9 +818,9 @@ public abstract class Brain {
 			
 			for (int column = 0 ; column < result[row].length ; column++) {
 				
-				//result[row][column] = rand.nextDouble() * 2.0 * epsilon - epsilon;
-				result[row][column] = (val - (int) val) * 2.0 * epsilon - epsilon; // TEMP, FOR BUGFIXING
-				val+= .1; // TEMP, FOR BUGFIXING
+				result[row][column] = rand.nextDouble() * 2.0 * epsilon - epsilon;
+				// result[row][column] = (val - (int) val) * 2.0 * epsilon - epsilon; // TEMP, FOR BUGFIXING
+				// val+= .1; // TEMP, FOR BUGFIXING
 				
 			}
 			
@@ -898,7 +898,7 @@ public abstract class Brain {
 			// Begin line search
 			weights = weights.plus(s.scale(z1));
 			
-			cost2 = costFunction(reshape(weights , dimensions , false) , x , y , layerSizes , lambda);
+			cost2 = costFunction(reshape(weights , dimensions , true) , x , y , layerSizes , lambda);
 			gradientsUnrolled2 = unroll(gradients);
 			
 			count += (length < 0 ? 1 : 0);
@@ -946,7 +946,7 @@ public abstract class Brain {
 					// Continue line search
 					weights = weights.plus(s.scale(z2));
 					
-					cost2 = costFunction(reshape(weights , dimensions , false) , x , y , layerSizes , lambda);
+					cost2 = costFunction(reshape(weights , dimensions , true) , x , y , layerSizes , lambda);
 					gradientsUnrolled2 = unroll(gradients);
 					
 					M -= 1.0;
@@ -1003,7 +1003,7 @@ public abstract class Brain {
 				z1 = z1 + z2; // Update current estimates
 				weights = weights.plus(s.scale(z2));
 				
-				cost2 = costFunction(reshape(weights , dimensions , false) , x , y , layerSizes , lambda);
+				cost2 = costFunction(reshape(weights , dimensions , true) , x , y , layerSizes , lambda);
 				gradientsUnrolled2 = unroll(gradients);
 				
 				M = M - 1;
@@ -1067,7 +1067,7 @@ public abstract class Brain {
 			
 		}
 		
-		return reshape(weights , dimensions , false);
+		return reshape(weights , dimensions , true);
 		
 	} // END fmincg
 	
