@@ -5,12 +5,20 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.IntSummaryStatistics;
 
 import javax.imageio.ImageIO;
 
 public class ImageBrain extends Brain {
 	
-	private final int PRE_DATA_LINES = 1;
+	private static final int PRE_DATA_LINES = 1;
+	public static final double RED_GRAY_COEFFICIENT = .21;
+	public static final double GREEN_GRAY_COEFFICIENT = .72;
+	public static final double BLUE_GRAY_COEFFICIENT = .07;
+	public static final boolean UNROLLED_VERTICAL = false;
+	
+	// MODIFIABLE FINALS
+	public static final int EDGE_DETECT_STRUCTURING_ELEMENT_SIZE = 3; // MUST be odd
 	
 	private int[][] rgb; // Defined in loadData, NOT in constructor
 	private int[] unrolledRgb; // Defined in loadData, NOT in constructor
@@ -116,15 +124,31 @@ public class ImageBrain extends Brain {
 				
 			}
 			
-			// RESIZE so not cripplingly large
-			image = ImageProcessor.resize(image , width , height , Image.SCALE_SMOOTH);
+			// Extract fullsize grayscale image for processing; will be downsized and the larger array garbaged before next iteration
+			// See immediately below for near-identical operation with full comments
+			int origWidth = image.getWidth();
+			int origHeight = image.getHeight();
+			int[] fullsizeGray = new int[origWidth * origHeight];
+			int[] argb = image.getRGB(0 , 0 , origWidth , origHeight , null , 0 , origWidth);
 			
-			int[] argb = image.getRGB(0 , 0 , image.getWidth() , image.getHeight() , null , 0 , image.getWidth());
+			argb = image.getRGB(0 , 0 , origWidth , origHeight , null , 0 , origWidth);
+			
+			byte[][] rgbBytes = new byte[argb.length][4];
+			for (int i = 0 ; i < argb.length ; i++)
+				rgbBytes[i]= ByteBuffer.allocate(4).putInt(argb[i]).array();
+			
+			for (int i = 0 ; i < rgbBytes.length ; i++)
+				fullsizeGray[i] = (int) ((rgbBytes[i][1] & 0xFF) * RED_GRAY_COEFFICIENT +
+											(rgbBytes[i][2] & 0xFF) * GREEN_GRAY_COEFFICIENT +
+											(rgbBytes[i][3] & 0xFF) * BLUE_GRAY_COEFFICIENT);
+			
+			// RESIZE so not cripplingly large for rgb extraction
+			image = ImageProcessor.resize(image , width , height , Image.SCALE_SMOOTH);
 			
 			// MUST ASSUME pixel data is in correct orientation, dimensions <--- IMPROVE THIS
 			// Extract r,g,b components from TYPE_INT_ARGB:
 			// First, convert int into its four component bytes
-			byte[][] rgbBytes = new byte[argb.length][4];
+			rgbBytes = new byte[argb.length][4];
 			for (int i = 0 ; i < argb.length ; i++)
 				rgbBytes[i]= ByteBuffer.allocate(4).putInt(argb[i]).array();
 			
@@ -144,6 +168,12 @@ public class ImageBrain extends Brain {
 			// Remove the white background if presence of one is mandated
 			if (whiteBackground)
 				unrolledRgb = ImageProcessor.removeBackground(unrolledRgb , rgb.length);
+			
+			// Detect edges and put into binary (0 or 1) 2D array; via morphological gradient -> adaptive thresholding
+			int[] edges = ImageProcessor.detectBinaryEdges(fullsizeGray , origWidth , origHeight , UNROLLED_VERTICAL);
+			
+			// Resize fullsize grayscale down to required size for NN
+			int[] processedGray = ImageProcessor.resizeGrayscaleBilinear(edges , origWidth, origHeight, width, height);
 			
 			// Do other processing - filtering (Gaussian, Laplacian?), edge detection, etc
 			// Modify super's input layer size to match size of modified data
@@ -183,6 +213,118 @@ public class ImageBrain extends Brain {
 			g.dispose();
 			
 			return bScaledImage;
+			
+		}
+		
+		public static int[] resizeGrayscaleBilinear(int[] intensities , int initWidth , int initHeight , int newWidth , int newHeight) {
+
+		    float xDiff , yDiff;
+		    int topLeft, topRight, botLeft, botRight , x, y , index , intensity;
+		    
+		    int[] result = new int[newWidth * newHeight];
+		    int resultIndex = 0;
+		    
+		    float xRatio = ((float)(initWidth - 1)) / newWidth;
+		    float yRatio = ((float)(initHeight - 1)) / newHeight;
+		    for (int i = 0 ; i < newHeight ; i++) {
+		    	
+		        for (int j = 0 ; j < newWidth ; j++) {
+		        	
+		            x = (int)(xRatio * j);
+		            y = (int)(yRatio * i);
+		            xDiff = (xRatio * j) - x;
+		            yDiff = (yRatio * i) - y;
+		            index = y * initWidth + x;
+
+		            // Range is 0 to 255 thus bitwise AND with 0xff
+		            topLeft = intensities[index] & 0xff ;
+		            topRight = intensities[index + 1] & 0xff ;
+		            botLeft = intensities[index + initWidth] & 0xff ;
+		            botRight = intensities[index + initWidth + 1] & 0xff ;
+		            
+		            // Bilinearly interpolate
+		            intensity = (int)(topLeft * (1 - xDiff) * (1 - yDiff)  +  topRight * (xDiff) * (1 - yDiff) +
+		                    botLeft * (yDiff) *(1 - xDiff)  +  botRight * (xDiff * yDiff));
+
+		            result[resultIndex] = intensity ;        
+		            resultIndex++;
+		            
+		        }
+		        
+		    }
+		    
+		    return result;
+		    
+		}
+		
+		/**
+		 * Detects edges in the provided grayscale image and returns as a binary (int 0 or 1) 2D array. 1 = edge pixel, 0 = not edge pixel.
+		 * Returns as int rather than boolean for easier processing in the brain.
+		 * @param intensities A GRAYSCALE image represented by an array of 8-bit intensities: 0-255.
+		 * @param width 
+		 * @param height 
+		 * @param vertical 
+		 * @return A binary (int 0 or 1) 2D array of edges in the image.
+		 * @throws BrainException 
+		 */
+		public static int[] detectBinaryEdges(int[] intensities , int width , int height , boolean vertical) throws BrainException {
+			
+			// Ensure input is valid grayscale intensities
+			// NOTE: this does not ensure the input is in fact grayscale, as it would throw no exception with an input of sequential RGB intensities.
+			IntSummaryStatistics stat = Arrays.stream(intensities).summaryStatistics();
+			if (stat.getMin() < 0 || stat.getMax() > 255)
+			    throw new BrainException("Invalid pixel intensity; edge detection failed.");
+		    
+			// morphological gradient
+			int[] nonbinaryEdges = detectEdges(intensities , width , height , vertical , EDGE_DETECT_STRUCTURING_ELEMENT_SIZE);
+			
+			// adaptive thresholding
+			int[] binaryEdges = adaptiveThreshold(nonbinaryEdges);
+			
+			return binaryEdges;
+			
+		}
+			
+		/**
+		 * Converts int array of colors listed by R,G,B into grayscale intensities.
+		 * @param rgb An int array of colors, with index 0 as red, 1 as blue, 2 as green and underlying arrays are pixels' respective intensities.
+		 * @return The grayscale intensities of each pixel provided in the input array.
+		 */
+		public static int[] toGrayscale(int[][] rgb) {
+			
+			int[] grayIntensities = new int[rgb[0].length];
+			
+			for (int i = 0 ; i < rgb[0].length ; i++) {
+				
+				int thisGrayIntensity = (int) (RED_GRAY_COEFFICIENT * rgb[0][i] +
+									GREEN_GRAY_COEFFICIENT * rgb[1][i] +
+									BLUE_GRAY_COEFFICIENT * rgb[2][i]);
+				grayIntensities[i] = thisGrayIntensity;
+				
+			}
+			
+			return grayIntensities;
+			
+		}
+		
+		/**
+		 * Performs morphological gradient edge detection on grayscale image pixel intensities.
+		 * @param intensities The grayscale intensities of each pixel in the image.
+		 * @param width 
+		 * @param height 
+		 * @param vertical 
+		 * @param structElemDim The size of the structuring element used for morphological gradients.
+		 * @return
+		 */
+		public static int[] detectEdges(int[] intensities , int width , int height , boolean vertical , int structElemDim) {
+			
+			// CODE HERE
+			
+		}
+		
+		public static int[] adaptiveThreshold(int[] intensities) {
+			
+			// CODE HERE
 			
 		}
 		

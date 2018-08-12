@@ -432,12 +432,15 @@ public abstract class Brain { // THINGS TO REPLACE AFTER BUGFIXING ARE IN: split
 		
 	}
 	
+	
+	// NOTE FOR RESHAPE / UNROLL METHODS:
+	// UNROLLING goes up-down then left-right
 	/**
 	 * 
 	 * @param mx
 	 * @return
 	 */
-	private static SimpleMatrix[] reshape(SimpleMatrix mx , int[] dimensions , boolean vertical) {
+	public static SimpleMatrix[] reshape(SimpleMatrix mx , int[] dimensions , boolean vertical) {
 		
 		SimpleMatrix[] reshaped = new SimpleMatrix[dimensions.length / 2];
 		
@@ -492,7 +495,80 @@ public abstract class Brain { // THINGS TO REPLACE AFTER BUGFIXING ARE IN: split
 	 * @param mx
 	 * @return
 	 */
-	private static double[][][] reshapeToDouble(SimpleMatrix mx , int[] dimensions , boolean vertical) {
+	public static int[][][] reshape(int[] mx , int[] dimensions , boolean vertical) {
+		
+		int[][][] reshaped = new int[dimensions.length / 2][][];
+		
+		int start = 0;
+		for (int i = 0 ; i < reshaped.length ; i++) {
+			
+			int cols = dimensions[i * 2];
+			int rows = dimensions[i * 2 + 1];
+			
+			// If unrolling horizontally, switch cols and rows for horizontal processing
+			if (!vertical) {
+				
+				int temp = cols;
+				cols = rows;
+				rows = temp;
+				
+			}
+			
+			reshaped[i] = new int[cols][rows];
+			for (int j = 0 ; j < cols ; j++) {
+				
+				// Copy one column from raw->reshaped[i][j]
+				System.arraycopy(mx , start , reshaped[i][j] , 0 , rows);
+				
+				// Update start
+				start += rows;
+				
+			}
+			
+		}
+		
+		// ***** CAREFUL HERE: opposite to algorithm for equivalent SimpleMatrix functions; each produces desired outcome in current contexts *****
+		// If unrolling vertically, transpose back to the right dimensions before return
+		if (vertical) {
+			
+			// Save pre-transposed matrices
+			int[][][] temp = reshaped;
+			// Overwrite output matrices so they can be reshaped to transposed dimensions
+			reshaped = new int[reshaped.length][][];
+			
+			// For each matrix
+			for (int i = 0 ; i < reshaped.length ; i++) {
+				
+				// Create empty matrix w/ transposed dimensions
+				int[][] current = new int[temp[i][0].length][temp[i].length];
+				
+				for (int j = 0 ; j < temp[i][0].length ; j++) {
+					
+					for (int k = 0 ; k < temp[i].length ; k++) {
+						
+						// Copy element from pre-transposed matrix into its transposed position
+						current[j][k] = temp[i][k][j];
+						
+					}
+					
+				}
+				
+				reshaped[i] = current;
+				
+			}
+					
+		}
+		
+		return reshaped;
+		
+	}
+	
+	/**
+	 * 
+	 * @param mx
+	 * @return
+	 */
+	public static double[][][] reshapeToDouble(SimpleMatrix mx , int[] dimensions , boolean vertical) {
 		
 		double[][][] reshaped = new double[dimensions.length / 2][][];
 		
@@ -512,7 +588,7 @@ public abstract class Brain { // THINGS TO REPLACE AFTER BUGFIXING ARE IN: split
 				cols = rows;
 				rows = temp;
 				
-			} // RETHINK: has to do more than this
+			}
 			
 			reshaped[i] = new double[cols][rows];
 			for (int j = 0 ; j < cols ; j++) {
